@@ -60,6 +60,17 @@ function storageError(error: unknown): never {
   throw new StoreError("Cloud storage is unavailable. Please try again.", 503);
 }
 
+function contentLength(headers: Pick<Headers, "get">): number | null {
+  const encoding = headers.get("content-encoding");
+  const raw = headers.get("content-length");
+  if ((encoding && encoding.toLowerCase() !== "identity") || raw === null)
+    return null;
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
+    throw new StoreError("Storage returned an invalid file size", 503);
+  }
+  return Number(raw);
+}
+
 async function consume(
   stream: ReadableStream<Uint8Array>,
   size: number | null,
@@ -106,6 +117,9 @@ export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
       const result = await sdk.get(key, {
         access: "private",
         useCache: false,
+        // Compressed CDN responses use weak ETags, which cannot authorize CAS writes.
+        // Request the original representation so the ETag belongs to stored bytes.
+        headers: { "accept-encoding": "identity" },
         abortSignal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!result) return null;
@@ -114,14 +128,18 @@ export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
       }
       // The revision and bytes belong to this one response; a separate head() races writers.
       let revision: string;
+      let expectedLength: number | null;
       try {
         revision = etag(result.blob.etag);
+        expectedLength = contentLength(result.headers);
       } catch (error) {
         await result.stream.cancel().catch(() => undefined);
         throw error;
       }
       return {
-        bytes: await consume(result.stream, result.blob.size, limit),
+        // SDK blob.size is zero when Content-Length is absent, and encoded
+        // Content-Length counts compressed bytes while fetch streams decoded bytes.
+        bytes: await consume(result.stream, expectedLength, limit),
         etag: revision,
       };
     } catch (error) {
@@ -137,6 +155,12 @@ export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
   ) {
     keyPath(key);
     if (expectedEtag !== null) etag(expectedEtag);
+    if (expectedEtag?.startsWith("W/")) {
+      throw new StoreError(
+        "Storage returned a revision that cannot be updated safely. Reload and try again.",
+        503,
+      );
+    }
     try {
       const result = await sdk.put(key, bytes, {
         access: "private",

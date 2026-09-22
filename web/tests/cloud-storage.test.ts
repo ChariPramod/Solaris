@@ -12,11 +12,20 @@ const status = (expected: number) => (error: unknown) =>
   error instanceof StoreError && error.status === expected;
 function response(
   bytes: Buffer,
-  options: { size?: number; etag?: string; cancel?: () => void } = {},
+  options: {
+    size?: number;
+    etag?: string;
+    cancel?: () => void;
+    headers?: HeadersInit;
+  } = {},
 ): GetBlobResult {
   return {
     statusCode: 200,
-    headers: new Headers(),
+    headers: new Headers(
+      options.headers ?? {
+        "content-length": String(options.size ?? bytes.length),
+      },
+    ),
     stream: new ReadableStream({
       start(controller) {
         controller.enqueue(bytes);
@@ -64,6 +73,10 @@ test("JSON read returns bytes and revision from one uncached private response", 
         assert.equal(key, "reviews/run_1/T01-1.json");
         assert.equal(options.access, "private");
         assert.equal(options.useCache, false);
+        assert.equal(
+          new Headers(options.headers).get("accept-encoding"),
+          "identity",
+        );
         assert.ok(options.abortSignal instanceof AbortSignal);
         return response(Buffer.from('{"note":"saved"}'));
       },
@@ -146,6 +159,42 @@ test("invalid JSON and malformed UTF-8 cannot become replacement data", async ()
     );
     await assert.rejects(storage.readJSON("run/result.json"), status(503));
   }
+});
+
+test("chunked and compressed Blob responses use decoded stream bounds instead of SDK size", async () => {
+  const bytes = Buffer.from(JSON.stringify({ note: "saved ".repeat(200) }));
+  const headerCases: Record<string, string>[] = [
+    { "content-encoding": "br", "transfer-encoding": "chunked" },
+    { "content-encoding": "br", "content-length": "40" },
+    { "transfer-encoding": "chunked" },
+  ];
+  for (const headers of headerCases) {
+    const storage = createCloudStorage(
+      sdk({ get: async () => response(bytes, { size: 0, headers }) }),
+    );
+    assert.deepEqual(
+      (await storage.readJSON("index.json"))?.value,
+      JSON.parse(bytes.toString()),
+    );
+    await assert.rejects(storage.readBytes("index.json", 100), status(413));
+  }
+});
+
+test("weak response revisions cannot trigger unsafe or misleading conditional writes", async () => {
+  let writes = 0;
+  const storage = createCloudStorage(
+    sdk({
+      put: async () => {
+        writes++;
+        throw new Error("unexpected");
+      },
+    }),
+  );
+  await assert.rejects(
+    storage.writeJSON("note.json", {}, 'W/"revision"'),
+    status(503),
+  );
+  assert.equal(writes, 0);
 });
 
 test("creates are immutable and updates use CAS; returned revision is the write revision", async () => {
