@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+results/
+dist/
+*.egg-info/
+.DS_Store
+tmp/
+web/node_modules/
+web/.next/
+web/*.tsbuildinfo
+web/.env.local
+
+.gauntlet-workspace/
+
+# Generated hosting preview and local-only deployment records
+hosted-preview/
+DEPLOYMENT.md
+web/scripts/export-preview.ts
+# Credentials and generated output in any subproject
+.env.*
+!.env.example
+!web/.env.example
+.vercel/
+node_modules/
+.next/
+*.tsbuildinfo

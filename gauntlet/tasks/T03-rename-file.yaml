@@ -1,0 +1,16 @@
+id: T03
+name: rename-file
+tier: 1
+prompt: In the file manager, rename draft_report.txt in /home/user/gauntlet/docs to
+  final_report.txt.
+setup: {}
+verifier:
+  kind: rename
+  source: draft_report.txt
+  target: final_report.txt
+max_steps: 10
+max_seconds: 180
+tags:
+- files
+allowed_changes:
+  draft_report.txt: final_report.txt

@@ -1,0 +1,49 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[dev,live]'
+      - run: make check
+      - run: node tests/report_filters.cjs
+      - run: python -m gauntlet preflight --dry-run --tasks all --trials 1 --out results/ci --json
+      - run: python -m gauntlet run --dry-run --tasks all --trials 1 --out results/ci
+      - run: python -m gauntlet audit results/ci --json
+      - run: python -m gauntlet recover results/ci --out results/ci-recovered --json
+      - run: python -m gauntlet run --dry-run --tasks all --trials 1 --out results/ci-candidate
+      - run: python -m gauntlet compare results/ci-candidate --baseline results/ci --json
+      - run: python -m gauntlet gate results/ci-candidate --baseline results/ci --policy examples/gate-diagnostic.json --json
+  workspace:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev,live]'
+        working-directory: .
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:integration
+        env:
+          GAUNTLET_PYTHON: python

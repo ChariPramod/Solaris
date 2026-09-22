@@ -1,0 +1,19 @@
+id: T10
+name: login-extract-crossapp
+tier: 3
+prompt: Log in to http://localhost:8001 using the credentials in /home/user/gauntlet/docs/creds.txt,
+  find the invoice total for March, and enter it in the amount field at http://localhost:8000/reimburse,
+  then submit.
+setup:
+  formsite: true
+  portal: true
+verifier:
+  kind: json
+  path: out/reimburse.json
+  expected:
+    amount: '1274.50'
+max_steps: 30
+max_seconds: 300
+tags:
+- browser
+- cross-app

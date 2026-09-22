@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "require_live": true,
+  "required_tasks": ["T01", "T02"],
+  "min_pass_rate": 1.0,
+  "max_regressions": 0
+}

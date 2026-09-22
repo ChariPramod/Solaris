@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}Gauntlet results{% endblock %}</title>
+  <link rel="stylesheet" href="report.css">
+  <script src="report.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to results</a>
+  <header class="masthead"><a class="brand" href="index.html">GAUNTLET <span>/ evaluation results</span></a>
+    <span class="run-status">{{ run.status }}</span></header>
+  <main id="main">
+    {% set display_mode = trial.record.mode if trial is defined else run.mode %}
+    {% if display_mode == 'dry-run' %}
+    <aside class="notice dry"><strong>Dry-run diagnostics.</strong> Static screenshots; no desktop or model calls.
+      Failed checks are expected. These are not benchmark scores.</aside>
+    {% endif %}
+    {% if run.get('recovery') %}
+    <aside class="notice"><strong>Recovered local snapshot.</strong> Saved trial results were reconciled into this export.
+      No trials were rerun and no remote desktops were cleaned up. Missing trials and cleanup uncertainty remain.
+      Saved results added to the manifest: {{ run.recovery.added_records|length }}.</aside>
+    {% endif %}
+    {% if run.get('recovered_sources') %}
+    <aside class="notice"><strong>Includes recovered local snapshots.</strong> No trials were rerun or remote cleanup performed by recovery. Original recovery findings appear in provenance.</aside>
+    {% endif %}
+    {% if run.records|length < run.planned_trials %}
+    <aside class="notice"><strong>Partial run.</strong> {{ run.records|length }} of {{ run.planned_trials }}
+      planned trials recorded. Missing trials are not counted as successes.</aside>
+    {% endif %}
+    {% if run.get('stop_reason') %}
+    <aside class="notice"><strong>Infrastructure failure limit reached.</strong>
+      Scheduling stopped at {{ run.stop_reason.observed_failures }} failed trials (limit {{ run.stop_reason.limit }}),
+      triggered by {{ run.stop_reason.task_id }}/{{ run.stop_reason.trial }}.
+      Infrastructure and cleanup errors count once per trial. Already active trials were allowed to finish;
+      further errors may appear in the final totals. Unstarted trials remain missing from the original plan.</aside>
+    {% endif %}
+    {% if run.get('stopped_sources') %}
+    <aside class="notice"><strong>Includes runs that reached an infrastructure failure limit.</strong>
+      {% for source in run.stopped_sources %}{{ source.name }}: limit {{ source.stop_reason.limit }},
+      triggered by {{ source.stop_reason.task_id }}/{{ source.stop_reason.trial }}. {% endfor %}
+      Compare failure-limit settings and missing coverage before interpreting scores.</aside>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer>State-based verification · {{ run.created_at|default('Date not recorded') }}
+    <span>Offline report · no external resources</span></footer>
+</body>
+</html>

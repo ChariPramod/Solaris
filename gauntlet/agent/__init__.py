@@ -1,0 +1,1 @@
+"""Screenshot-only agent adapters."""

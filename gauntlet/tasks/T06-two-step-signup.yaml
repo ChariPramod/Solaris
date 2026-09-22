@@ -1,0 +1,20 @@
+id: T06
+name: two-step-signup
+tier: 2
+prompt: Sign up at http://localhost:8000/signup with the details in /home/user/gauntlet/docs/signup_details.txt.
+setup:
+  formsite: true
+verifier:
+  kind: json
+  path: out/signup.json
+  expected:
+    name: Maria Chen
+    email: maria@example.com
+    company: Pinetree
+    role: Researcher
+max_steps: 25
+max_seconds: 300
+tags:
+- browser
+- forms
+- cross-app

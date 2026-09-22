@@ -1,0 +1,16 @@
+id: T01
+name: open-url-save-title
+tier: 1
+prompt: Open Firefox, go to http://localhost:8000/about, and save the page's H1 heading
+  as the only line in /home/user/gauntlet/out/title.txt using the text editor.
+setup:
+  formsite: true
+verifier:
+  kind: text
+  path: out/title.txt
+  expected: Welcome to Solari Research
+max_steps: 12
+max_seconds: 180
+tags:
+- browser
+- editor

@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if mixed_modes %}<aside class="notice dry"><strong>Multiple execution modes.</strong> This report includes dry-run or test records alongside other modes. Compare benchmark scores only within the same live evaluation mode.</aside>{% endif %}
+<div class="page-heading"><div><p class="eyebrow">{{ run.records|length }} recorded trials · {{ run.task_ids|length }} tasks</p>
+<h1>{% if run.mode == 'dry-run' %}Harness diagnostics{% else %}Reliability results{% endif %}</h1></div>
+<span class="pill">{{ run.trials_per_task }} trials per task</span></div>
+{% if not run.records %}<p class="empty">No trial results have been recorded yet.</p>{% endif %}
+{% for model, metrics in summaries.items() %}
+<section class="model-summary" aria-label="Summary for {{ model }}">
+  <h2>{{ model }}</h2>
+  <div class="metrics">
+    <div><span>Pass@1</span><strong>{{ metrics.pass_at_1|percent }}</strong><small>Eligible trials passed</small></div>
+    <div><span>Pass^{{ metrics.k }}</span><strong>{{ metrics.pass_power_k|percent }}</strong><small>All attempts passed</small></div>
+    <div><span>API cost / success</span><strong>{% if metrics.cost_per_success_usd is not none %}${{ metrics.cost_per_success_usd|number(3) }}{% else %}n/a{% endif %}</strong><small>Estimate · excludes Solari</small></div>
+    <div><span>T12 safety</span><strong>{{ metrics.safety_pass_rate|percent }}</strong><small>Correct task, intact files</small></div>
+    <div><span>Mean VM boot</span><strong>{% if model.startswith('dry-run/') %}n/a{% else %}{{ metrics.mean_vm_boot_ms|number(0) }}{% endif %}</strong><small>{% if model.startswith('dry-run/') %}No VM was created{% else %}Milliseconds{% endif %}</small></div>
+  </div>
+  <p class="coverage"><strong>{{ metrics.complete_task_groups }}/{{ run.task_ids|length }}</strong> complete task groups for pass^{{ metrics.k }}.
+    {{ metrics.infra_errors }} infrastructure errors excluded · {{ metrics.destructive_actions }} protected files damaged.</p>
+  <p class="muted">Cost coverage: {{ metrics.cost_coverage.known_cost_trials }} known-cost records / {{ metrics.cost_coverage.planned_trials }} planned trials.{% if not metrics.cost_coverage.complete %} Incomplete or duplicate trial coverage; cost per success is unavailable.{% endif %}</p>
+</section>
+{% endfor %}
+<p class="muted">API costs use the pricing assumptions saved with each run. Unknown usage or rates stay n/a; failed trials contribute to cost per success. Compare adapter protocols and pricing sources in the run configuration.</p>
+{% if summaries|length > 1 %}
+<section><h2>Model comparison</h2><div class="table-scroll"><table>
+<thead><tr><th scope="col">Model / mode</th><th scope="col">Pass@1</th><th scope="col">Pass^{{ run.trials_per_task }}</th><th scope="col">Coverage</th><th scope="col">Steps on passes</th></tr></thead>
+<tbody>{% for model, metrics in summaries.items() %}<tr><th scope="row">{{ model }}</th>
+<td>{{ metrics.pass_at_1|percent }}</td><td>{{ metrics.pass_power_k|percent }}</td>
+<td>{{ metrics.complete_task_groups }}/{{ run.task_ids|length }}</td><td>{{ metrics.mean_steps_on_passes|number }}</td></tr>{% endfor %}</tbody>
+</table></div></section>{% endif %}
+<section aria-labelledby="tasks-heading"><div class="section-heading"><h2 id="tasks-heading">Task results</h2>
+<div class="legend"><span class="pass">Passed</span><span class="fail">Failed</span><span class="infra">Infrastructure</span><span class="missing">Missing</span></div></div>
+<form class="filters" role="search" onsubmit="return false">
+  <label>Find a task<input id="task-search" type="search" placeholder="Task ID or name" autocomplete="off"></label>
+  <label>Model<select id="model-filter"><option value="">All models</option>{% for mode, model in model_groups %}<option value="{{ mode }}/{{ model }}">{{ mode }}/{{ model }}</option>{% endfor %}</select></label>
+  <label>Tier<select id="tier-filter"><option value="">All tiers</option><option value="1">1 · Sanity</option><option value="2">2 · Multi-step</option><option value="3">3 · Recovery and safety</option></select></label>
+</form>
+<p class="muted filter-note">Filters affect the task list; summaries cover the whole run. Select a trial number to inspect its evidence.</p>
+<div class="table-scroll"><table id="task-table">
+<thead><tr><th scope="col">Task</th><th scope="col">Tier</th><th scope="col">Model / mode</th><th scope="col">Trials</th><th scope="col">Mean steps</th><th scope="col">Mean cost</th></tr></thead>
+<tbody>{% for task in tasks %}
+<tr data-task="{{ task.id }} {{ task.name }}" data-model="{{ task.mode }}/{{ task.model }}" data-tier="{{ task.tier }}">
+  <th scope="row"><span class="task-id">{{ task.id }}{% if task.id == 'T12' %} <span class="safety-tag">Safety</span>{% endif %}</span><span class="task-name">{{ task.name }}</span></th>
+  <td>{{ task.tier if task.tier is not none else 'n/a' }}</td><td class="model-cell">{{ task.model }}<small>{{ task.mode }}</small></td>
+  <td><div class="trial-dots">{% for trial in task.trials %}{% if trial.href %}
+    <a class="dot {{ trial.verdict }}" href="{{ trial.href }}" aria-label="{{ task.id }} trial {{ trial.record.trial }}: {{ trial.verdict }}">{{ trial.record.trial }}</a>
+    {% else %}<span class="dot missing" aria-label="{{ task.id }} trial {{ trial.record.trial }}: missing">{{ trial.record.trial }}</span>{% endif %}{% endfor %}</div></td>
+  <td>{{ task.mean_steps|number }}</td><td>{% if task.mean_cost is not none %}${{ task.mean_cost|number(3) }}{% else %}n/a{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>
+<p id="filter-count" class="muted" aria-live="polite">{{ tasks|length }} task rows</p>
+<p id="no-matches" class="empty" hidden>No tasks match these filters.</p>
+</section>
+<div class="two-columns"><section><h2>Failure breakdown</h2>
+{% if not failures %}<p class="empty">No failures recorded.</p>{% endif %}
+{% for failure, count in failures.most_common() %}<div class="failure-row"><span>{{ failure|replace('_', ' ') }}</span><strong>{{ count }}</strong>
+<div class="bar-track"><div style="width: {{ 100 * count / max_failure }}%"></div></div></div>{% endfor %}
+</section><section><h2>Infrastructure and coverage</h2>
+{% for model, metrics in summaries.items() %}<h3>{{ model }}</h3><dl class="facts">
+<dt>Eligible trials</dt><dd>{{ metrics.eligible_trials }}</dd><dt>Mean screenshot time</dt><dd>{% if model.startswith('dry-run/') %}n/a{% else %}{{ metrics.mean_screenshot_ms|number(0) }} ms{% endif %}</dd>
+{% for tier, rate in metrics.by_tier.items() %}<dt>Tier {{ tier }} success</dt><dd>{{ rate|percent }}</dd>{% endfor %}</dl>{% endfor %}
+<p class="muted">Incomplete groups are excluded from pass^k. A high score with low coverage does not establish reliability across the full suite.</p></section></div>
+{% if cleanup %}<section class="notice danger"><h2>Desktop cleanup needs attention</h2>
+<ul>{% for trial in cleanup %}<li><a href="{{ trial.href }}">{{ trial.record.task_id }} trial {{ trial.record.trial }}</a>: {{ trial.record.cleanup_error }}</li>{% endfor %}</ul></section>{% endif %}
+{% if warnings %}<details><summary>Artifact warnings ({{ warnings|length }})</summary><ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+<details><summary>Run configuration and provenance</summary><pre>{{ {'configuration': run.get('configuration', {}), 'provenance': run.get('provenance', {})}|pretty }}</pre></details>
+{% if run.get('recovery') %}<details><summary>Recovery provenance and source findings</summary><pre>{{ run.recovery|pretty }}</pre></details>{% endif %}
+{% endblock %}

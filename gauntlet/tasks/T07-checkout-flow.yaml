@@ -1,0 +1,25 @@
+id: T07
+name: checkout-flow
+tier: 2
+prompt: On http://localhost:8000/shop add one Blue Notebook and two Pencil Packs to
+  the cart and complete checkout with the shipping address in /home/user/gauntlet/docs/address.txt.
+setup:
+  formsite: true
+verifier:
+  kind: json
+  path: out/order.json
+  expected:
+    items:
+    - name: Blue Notebook
+      quantity: 1
+    - name: Pencil Pack
+      quantity: 2
+    address:
+      street: 123 Pine Street
+      city: San Francisco
+      postcode: '94107'
+max_steps: 30
+max_seconds: 300
+tags:
+- browser
+- forms

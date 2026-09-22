@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}{{ trial.record.task_id }} · Trial {{ trial.record.trial }} · Gauntlet{% endblock %}
+{% block content %}
+<nav class="trial-nav" aria-label="Trial navigation"><a href="index.html">← All results</a><span>{% if previous %}<a href="{{ previous }}">Previous trial</a>{% endif %}{% if following %}<a href="{{ following }}">Next trial →</a>{% endif %}</span></nav>
+<div class="page-heading"><div><p class="eyebrow">{{ trial.record.model }} · {{ trial.record.mode }}</p><h1>{{ trial.record.task_id }} <span class="muted">/ Trial {{ trial.record.trial }}</span></h1></div><span class="pill {{ trial.verdict }}">{{ trial.verdict }}</span></div>
+<dl class="trial-metrics"><div><dt>Steps</dt><dd>{{ trial.record.steps }}</dd></div><div><dt>Wall time</dt><dd>{{ trial.record.wall_seconds|number }} s</dd></div><div><dt>Termination</dt><dd>{{ trial.record.termination }}</dd></div><div><dt>Failure class</dt><dd>{{ trial.record.failure_class or 'None' }}</dd></div></dl>
+<p class="muted">Estimated API cost: <strong>{% if trial.record.get('cost_usd') is not none %}${{ trial.record.cost_usd|number(6) }}{% else %}n/a{% endif %}</strong> · {{ trial.record.get('cost_status', 'unavailable')|replace('_', ' ') }}. Excludes Solari and other fees.</p>
+{% if definition %}<section class="task-prompt"><h2>Task prompt</h2><p>{{ definition.definition.prompt }}</p><small>Task SHA-256: <code>{{ definition.sha256 }}</code></small></section>{% endif %}
+{% if trial.record.get('failure_stage') %}<p class="notice"><strong>Failure stage:</strong> {{ trial.record.failure_stage|replace('_', ' ') }}. Cleanup status is recorded separately.</p>{% endif %}
+{% if trial.record.get('error') %}<aside class="notice danger"><strong>Execution error</strong><p>{{ trial.record.error }}</p></aside>{% endif %}
+{% if trial.record.get('cleanup_error') %}<aside class="notice danger"><strong>Desktop cleanup failed</strong><p>{{ trial.record.cleanup_error }}</p></aside>{% endif %}
+<section id="verification"><div class="section-heading"><h2>Verifier evidence</h2><span class="muted">{{ trial.record.destructive_actions }} protected files damaged</span></div><pre>{{ trial.record.evidence|pretty }}</pre></section>
+<section><div class="section-heading"><h2>Screenshot and action trace</h2><span class="muted">{{ frames|length }} recorded decisions</span></div>
+<p class="muted">Each frame shows the screen before its action. A red circle marks a recorded click or drag destination.</p>
+{% for frame in frames %}<details class="frame" id="frame-{{ loop.index }}" {% if loop.first %}open{% endif %}>
+<summary><span>Step {{ frame.step }}</span><strong>{{ frame.action.kind|replace('_', ' ') }}</strong>{% if frame.error %}<span class="error-label">Action error</span>{% endif %}</summary>
+<div class="frame-body"><div>{% if frame.screenshot.url %}<a href="{{ frame.screenshot.url }}"><img src="{{ frame.screenshot.url }}" alt="Screen before step {{ frame.step }}: {{ frame.action.kind }}{% if frame.screenshot.marked %}, with action position highlighted{% endif %}" loading="lazy" width="1280" height="720"></a>{% else %}<p class="empty">{{ frame.screenshot.error }}</p>{% endif %}</div>
+<div class="action-detail"><h3>Action</h3><pre>{{ frame.action|pretty }}</pre>{% if frame.error %}<p class="notice danger">{{ frame.error }}</p>{% endif %}<p class="muted">Tokens in: {{ frame.tokens_in|number(0) }}<br>Tokens out: {{ frame.tokens_out|number(0) }}</p></div></div>
+<p class="muted">Estimated API cost: {% if frame.cost_usd is not none %}${{ frame.cost_usd|number(6) }}{% else %}n/a{% endif %} · {{ frame.cost_status|replace('_', ' ') }}</p>
+{% if frame.usage is not none %}<details><summary>Billable token breakdown</summary><pre>{{ frame.usage|pretty }}</pre></details>{% endif %}
+<details class="raw-response"><summary>Full model response</summary><pre>{{ frame.response|pretty }}</pre></details></details>{% endfor %}
+{% if not frames %}<p class="empty">No model decisions were recorded. Inspect the execution error and verifier evidence above.</p>{% endif %}
+</section>
+<section><h2>Final screenshot</h2>{% if final.url %}<a href="{{ final.url }}"><img class="final-screen" src="{{ final.url }}" alt="Final state of the desktop" loading="lazy" width="1280" height="720"></a>{% else %}<p class="empty">{{ final.error or 'No final screenshot was recorded.' }}</p>{% endif %}</section>
+{% if warnings %}<aside class="notice"><h2>Artifact warnings</h2><ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul></aside>{% endif %}
+<details><summary>Full trial record</summary><pre>{{ trial.record|pretty }}</pre></details>
+{% endblock %}

@@ -1,0 +1,19 @@
+id: T05
+name: contact-form
+tier: 2
+prompt: Go to http://localhost:8000/contact and submit the form with name Pramod Test,
+  email test@example.com, and message Hello from the harness.
+setup:
+  formsite: true
+verifier:
+  kind: json
+  path: out/contact.json
+  expected:
+    name: Pramod Test
+    email: test@example.com
+    message: Hello from the harness
+max_steps: 20
+max_seconds: 300
+tags:
+- browser
+- forms

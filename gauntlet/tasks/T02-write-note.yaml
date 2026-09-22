@@ -1,0 +1,14 @@
+id: T02
+name: write-note
+tier: 1
+prompt: 'Using the text editor, create /home/user/gauntlet/out/note.txt containing
+  exactly: `Solari eval run 1`.'
+setup: {}
+verifier:
+  kind: text
+  path: out/note.txt
+  expected: Solari eval run 1
+max_steps: 10
+max_seconds: 180
+tags:
+- editor

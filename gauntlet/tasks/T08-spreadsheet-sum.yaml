@@ -1,0 +1,15 @@
+id: T08
+name: spreadsheet-sum
+tier: 2
+prompt: >-
+  Open /home/user/gauntlet/docs/sales.csv in LibreOffice Calc, put the total
+  of column B in cell B12, and save as /home/user/gauntlet/out/sales_total.ods.
+setup: {}
+verifier:
+  kind: ods_cell
+  path: out/sales_total.ods
+  cell: B12
+  expected: '1400'
+max_steps: 25
+max_seconds: 300
+tags: [spreadsheet, files]

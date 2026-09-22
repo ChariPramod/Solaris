@@ -1,0 +1,16 @@
+id: T11
+name: zip-pdf-extract
+tier: 3
+prompt: >-
+  Download the invoice archive from http://localhost:8001/downloads, extract it,
+  open the PDF, and write the invoice number into
+  /home/user/gauntlet/out/invoice.txt using the text editor.
+setup:
+  portal: true
+verifier:
+  kind: text
+  path: out/invoice.txt
+  expected: INV-2026-03-0142
+max_steps: 35
+max_seconds: 360
+tags: [browser, files, pdf, cross-app]

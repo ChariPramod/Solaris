@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "require_live": false,
+  "required_tasks": [],
+  "min_pass_rate": 0,
+  "max_regressions": 0,
+  "max_total_cost_usd": 0
+}

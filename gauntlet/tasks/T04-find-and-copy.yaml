@@ -1,0 +1,14 @@
+id: T04
+name: find-and-copy
+tier: 1
+prompt: Open /home/user/gauntlet/docs/contacts.txt, find the phone number for Maria
+  Chen, and copy it to the clipboard.
+setup: {}
+verifier:
+  kind: clipboard
+  expected: 415-555-0142
+max_steps: 12
+max_seconds: 180
+tags:
+- editor
+- clipboard
