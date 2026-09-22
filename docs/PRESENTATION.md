@@ -1,6 +1,6 @@
 # Presenting Solaris
 
-Updated September 22, 2026. This guide describes the verified cloud diagnostic product. It does not claim live agent benchmark results. The public landing page and guided setup improvements currently being built require their own release checks before they become part of this walkthrough.
+Updated September 22, 2026. This guide describes the verified cloud diagnostic product. It does not claim live agent benchmark results. The public overview and guided setup are deployed and browser-checked. The verified UI release is `f0ac407`, with readiness compatibility correction `800f953` deployed afterward.
 
 Product: **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)** · Source: **[ChariPramod/Solaris](https://github.com/ChariPramod/Solaris)**
 
@@ -22,14 +22,16 @@ The intended audience is a developer or team building computer-use agents. The c
 | Comparison and gates | Python comparison accepted the two diagnostic runs with no inconclusive transitions; strict live gate failed; explicit diagnostic gate passed | A diagnostic gate tests the evaluation pipeline, not production readiness of an agent |
 | Private storage and access control | Production HTTP checks for sign-in, protected data, cross-origin rejection and persistence | Single-owner workspace; no multi-user roles, tenant isolation or formal security audit |
 
-Production acceptance was recorded against source commit `c443612`. At that checkpoint, 414 Python tests and 101 TypeScript tests passed, and GitHub CI was green. These are a recorded checkpoint, not a claim about untested edits made afterward. See [the deployment guide](VERCEL.md) for the exact verification scope.
+The original production HTTP acceptance was recorded against `c443612`. The presentation release adds deployed UI commit `f0ac407` and readiness correction `800f953`: 117 TypeScript tests pass, and GitHub CI is green with 414 Python tests. Browser checks covered the public overview on desktop and at a 390-pixel emulated mobile viewport, authenticated mobile guide/jobs/forms, actual job launch, trial inspection, review saving and comparison. These are recorded interaction checks, not an exhaustive automated browser suite or testing on physical mobile devices. See [the deployment guide](VERCEL.md) for the earlier HTTP verification scope.
+
+The browser-launched diagnostic job `cloud_85622acca6b3ada276577e45ea50684b` completed with two of two planned trial results saved. Its T01 review was saved as revision 1 under reviewer **Presentation validation** and persisted after reload. Comparing it with `cloud_b49459f6a10ff76561db523f1987b332` through the UI returned two unchanged slots and zero inconclusive slots. The live setup check displayed the absent Solari/Anthropic credentials, disabled live launch, and was invalidated when the selected tasks changed. The default gate correctly failed on dry evidence and the zero pass rate, while coverage, audit, infrastructure, cleanup and regression checks passed. After reloading `800f953`, **Cloud readiness** reported storage/source checks passing and the two missing provider keys, with Vercel setup instructions. No live-provider execution occurred.
 
 ## Prepare before presenting
 
 1. Open the canonical product address. Sign in privately before screen sharing. The owner key is in the ignored local file `tmp/solaris-access-key.txt`; do not put it on a slide, in chat, in the repository or in a recorded terminal command.
-2. Locate the accepted baseline `cloud_636d9a1609324b11c94790f4210f5b38` and its independent child `cloud_b49459f6a10ff76561db523f1987b332` in the evaluation library. Both ran T01/T02 once. Use the full IDs when searching so an earlier failed acceptance job is not mistaken for the accepted pair.
+2. Locate the accepted baseline `cloud_b49459f6a10ff76561db523f1987b332` and browser-launched candidate `cloud_85622acca6b3ada276577e45ea50684b` in the evaluation library. Both ran T01/T02 once. The baseline has a recorded parent link to earlier run `cloud_636d9a1609324b11c94790f4210f5b38`; do not imply the newer candidate was launched as its linked child. Use the full IDs when searching so an earlier failed acceptance job is not mistaken for the accepted pair.
 3. Inspect both saved manifests and the baseline's **Artifact audit**. Confirm the product still loads them. Keep the earlier failed job visible in the history: it records a real storage bug that was subsequently fixed.
-4. Prepare one browser tab with the baseline's T01 trial and another with the child's **Compare & gate** panel. Choose the baseline above and run **Compare with this run** before the talk. Assessment starts a real Python worker and can take time; do not promise that cold startup fits a five-minute slot.
+4. Prepare one browser tab with the baseline's T01 trial and another with the candidate's **Compare & gate** panel. Choose the baseline above and run **Compare with this run** before the talk. Assessment starts a real Python worker and can take time; do not promise that cold startup fits a five-minute slot.
 5. In a separate prepared tab, run the default gate with **Require live evidence** enabled. Keep its actual failure visible. If showing a passing diagnostic gate too, use a separate tab: disable **Require live evidence**, set **Minimum pass rate (%)** to `0`, select the accepted baseline and set maximum regressions and recorded API cost to `0`. Leave critical-task requirements empty. Label that result a diagnostic policy.
 6. Use a stable connection and hide unrelated browser tabs. Keep the public repository and this guide open as useful fallbacks. Do not replace an unavailable live product with invented results.
 
@@ -39,10 +41,10 @@ Opening saved evidence is read-only. Launching runs or evaluating comparisons/ga
 
 | Time | Action | Suggested narration |
 |---|---|---|
-| 0:00–0:30 | Show the product and deliver the pitch. | “This is the deployed evaluation workspace. Today I am showing real diagnostic execution, not model benchmark results.” |
+| 0:00–0:30 | Show the public product overview, then the signed-in guided setup, and deliver the pitch. | “This is the deployed evaluation workspace. Today I am showing real diagnostic execution, not model benchmark results.” |
 | 0:30–1:15 | Open **Execution jobs**, then the accepted baseline. Point to its two recorded trials and dry-run label. | “A durable job launches the Python harness in an isolated worker. Completion means the execution finished; individual tasks can still fail. These diagnostic failures are expected.” |
 | 1:15–2:00 | Open T01 in **Trial matrix**, inspect verifier evidence and the saved **Artifact audit**. Briefly point to the playback controls without implying a live trajectory exists here. | “The score is tied to recorded state and evidence. The diagnostic agent stops immediately. With live runs, this same inspection surface shows the agent's screenshots and actions.” |
-| 2:00–2:45 | Show the persisted review, then **Attempt history** on the child. Optionally save a clearly named presentation note and reload it. | “A reviewer can record an interpretation without changing the original verifier outcome. A rerun has its own identity, and the earlier attempt remains available.” |
+| 2:00–2:45 | Show the saved **Presentation validation** review on the candidate, then **Attempt history** on the baseline to see its earlier parent. Optionally save a clearly named presentation note and reload it. | “A reviewer can record an interpretation without changing the original verifier outcome. A rerun has its own identity, and the earlier attempt remains available.” |
 | 2:45–3:45 | Switch to the prepared comparison and strict-gate tabs. Show actual transitions and the live-required failure. | “Comparisons require compatible task and environment evidence. The default gate refuses to treat a dry diagnostic as a validated live result.” |
 | 3:45–4:30 | Open **New evaluation**, show T01/T02 with one trial and concurrency one, then show the available saved setup. Close the form without starting another job unless a new execution is part of the session. | “The configuration is reusable. New execution is real work with a visible job and saved evidence, not an animation.” |
 | 4:30–5:00 | Show **Readiness** and explain the remaining provider setup. Close with the next milestone. | “The hosted application and diagnostic path work. We still need Solari and one model provider configured, then reviewed live trials before reporting agent reliability.” |
@@ -83,7 +85,7 @@ Jobs retain their status and any saved evidence. A timeout or missing cleanup ac
 
 **Is this ready for a broad public launch?**
 
-It is ready to present as a working, single-owner evaluation product with verified diagnostic execution. Broad live use still needs provider validation, authenticated browser/mobile acceptance, exercised rollback/restore, and operational work around cancellation, evidence export, retention and access roles as required by the audience.
+It is ready to present as a working, single-owner evaluation product with verified diagnostic execution. Broad live use still needs provider validation, broader browser/device coverage, exercised rollback/restore, and operational work around cancellation, evidence export, retention and access roles as required by the audience.
 
 ## What the owner still needs to provide
 
@@ -107,11 +109,16 @@ Recorded completed checks:
 
 Before presenting the next release:
 
-- [ ] Deploy and browser-check the new public landing and guided setup changes; do not describe them as verified until that is recorded.
-- [ ] Verify the authenticated walkthrough in desktop and mobile browsers against the deployed revision, including keyboard access and failed/loading states.
+- [x] Deploy and browser-check the public overview and guided setup (`f0ac407`, followed by readiness fix `800f953`).
+- [x] Check the public overview at desktop and 390-pixel emulated mobile widths, and inspect authenticated mobile guide/jobs/forms.
+- [x] Launch T01/T02 from the actual UI, inspect its saved trial, save a review and compare against the accepted baseline.
+- [x] Verify missing live credentials disable launch, changed task selection invalidates the readiness result, and Cloud readiness returns storage/source success plus the two missing keys.
+- [x] Run the default gate through the browser and verify it rejects dry evidence and zero task pass rate while coverage/audit/infrastructure/cleanup/regression checks pass.
+- [x] Confirm the saved presentation review persists after reload.
+- [ ] Complete a full keyboard/accessibility sweep and extend loading/error, cross-browser and physical-device checks beyond the recorded interaction paths.
 - [ ] Reopen the accepted evidence pair and prepare actual comparison/gate panels; confirm labels still distinguish diagnostics from benchmarks.
 - [ ] Confirm no owner/provider keys, private environment files or unrelated user data appear in shared screens, bundles or presentation artifacts.
-- [ ] Record the deployed source SHA and latest passing checks in the release handoff.
+- [x] Record the deployed release/correction SHAs and 117 TypeScript / 414 Python test checkpoint in the release handoff.
 
 Before claiming a validated live-agent product:
 

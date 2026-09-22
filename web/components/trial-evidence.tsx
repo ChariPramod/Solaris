@@ -541,7 +541,7 @@ function ReviewPanel({ endpoint }: { endpoint: string }) {
       <div className="section-heading">
         <h3>Human review</h3>
         <Badge variant="outline">
-          {review ? `Revision ${review.revision}` : "Local notes"}
+          {review ? `Revision ${review.revision}` : "Review notes"}
         </Badge>
       </div>
       <p className="muted mb-4 text-xs leading-relaxed">

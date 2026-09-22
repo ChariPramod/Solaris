@@ -123,7 +123,7 @@ Back up the complete private store through an authorized storage operation, incl
 
 ## Acceptance and remaining work
 
-The current suite passes **414 Python tests and 101 TypeScript tests**. GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. The real production HTTP acceptance script verified:
+The current suite passes **414 Python tests and 117 TypeScript tests**. GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. The real production HTTP acceptance script verified:
 
 - Anonymous access rejected with 401, owner sign-in and authenticated session retrieval; logout cleared the session and protected access returned 401 again.
 - Two actual cloud dry T01/T02 jobs completing with persisted manifests/trial evidence, a healthy saved audit and a parent/child attempt link.
@@ -134,7 +134,7 @@ The current suite passes **414 Python tests and 101 TypeScript tests**. GitHub C
 
 Accepted production jobs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49459f6a10ff76561db523f1987b332`. An earlier failed run is retained honestly: it exposed weak ETags on compressed Blob responses. The adapter now requests identity encoding, regression tests cover it, and real Blob conditional writes were verified. Both diagnostic sandboxes were confirmed `stopped` through the provider SDK after completion; this verifies those cloud workers ended, not cleanup of live Solari desktops.
 
-Published browser checks covered the sign-in layout and invalid-key feedback. The authenticated end-to-end cloud flow above was verified through HTTP. A complete authenticated browser interaction suite, mobile cloud QA and deployment rollback remain separate follow-up checks. Previous mobile QA applied to the local app. No live desktop/model evaluation has been verified.
+Published browser checks now cover the public overview, sign-in, guided diagnostic launch, saved trial/review, comparison, expected gate rejection and live-setup blockers. The full acceptance flow above was also verified through HTTP. See [the presentation guide](PRESENTATION.md) for the recorded browser release checks. A complete authenticated browser interaction suite, mobile cloud QA and deployment rollback remain separate follow-up checks. Previous mobile QA applied to the local app. No live desktop/model evaluation has been verified.
 
 ### Repeat the remote acceptance check
 

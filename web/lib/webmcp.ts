@@ -27,7 +27,7 @@ export function registerWorkspaceTools(
     {
       name: "list_evaluations",
       description:
-        "Read the local evaluation library, including warnings. Does not run evaluations.",
+        "Read the saved evaluation library, including warnings. Does not run evaluations.",
       inputSchema: {
         type: "object",
         properties: {},

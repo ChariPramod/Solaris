@@ -26,7 +26,7 @@ The project is `solaris-gauntlet`, rooted at `web`, using Next.js and Node 22. P
 
 The accepted job IDs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49459f6a10ff76561db523f1987b332`. An earlier failed acceptance run remains visible rather than being deleted; it exposed compressed Blob responses with weak ETags. Identity-encoded reads and regression tests fixed that real storage issue. Both diagnostic sandboxes were confirmed `stopped` through the provider SDK after completion; this verifies those cloud workers ended, not cleanup of live Solari desktops.
 
-Browser verification on the published deployment covered the sign-in layout and invalid-key feedback. The complete authenticated cloud workflow was exercised through HTTP, not through a full browser interaction suite. Earlier mobile checks applied to the local workspace. Deployment rollback has not been exercised. Live provider credentials remain absent, and no live desktop/model benchmark is verified.
+The initial published browser check covered sign-in layout and invalid-key feedback; the presentation release extends that coverage as recorded below. The original broad cloud acceptance used HTTP. Deployment rollback has not been exercised. Live provider credentials remain absent, and no live desktop/model benchmark is verified.
 
 Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. There is no automatic replay, resume, cancellation UI, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
 
@@ -34,7 +34,11 @@ Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at
 
 Use [docs/PRESENTATION.md](docs/PRESENTATION.md) for the 30-second pitch, five-minute product walkthrough, accepted diagnostic run IDs, audience questions, provider-setup steps and release checklist. Present Solaris as a working single-owner evaluation product with verified cloud diagnostics. Do not describe dry-run failures, a passing diagnostic gate or unit-test counts as live-agent reliability evidence.
 
-The current presentation work adds clearer first-visit product explanation and guided setup/readiness. Those UI changes still need deployment and browser verification; this section does not certify them. A complete authenticated desktop/mobile walkthrough and an exercised rollback/restore remain release checks. The completed production HTTP acceptance and its exact source revision are recorded above.
+The public product overview and guided setup/readiness are deployed in UI release `f0ac407`, followed by readiness compatibility correction `800f953`. **Current validation: 117 TypeScript tests pass; GitHub CI is green, including 414 Python tests.** The correction accepts both raw and wrapped readiness setup requests, with six regression tests; cloud wording and section scroll reset were also corrected.
+
+Browser checks verified the public overview on desktop and at a **390-pixel emulated mobile viewport**, and inspected authenticated mobile guide/jobs/forms. An actual UI launch created diagnostic job `cloud_85622acca6b3ada276577e45ea50684b`, which completed with two of two trial results saved. The trial was opened and a review saved as revision 1 under **Presentation validation**, persisting after reload. The actual comparison UI, using baseline `cloud_b49459f6a10ff76561db523f1987b332`, returned two unchanged slots and zero inconclusive slots. The default browser gate correctly failed for dry evidence and zero task pass rate, while coverage, audit, infrastructure, cleanup and regression checks passed. The live setup check reported missing Solari/Anthropic credentials, disabled launch and invalidated the check when task selection changed. After reloading correction `800f953`, Cloud readiness passed storage/source checks, reported the same two missing keys and displayed the Vercel setup instructions.
+
+These are specific recorded browser interactions, not an exhaustive automated browser suite or physical mobile-device testing. A full keyboard/accessibility sweep, broader error-state/device coverage and an exercised rollback/restore remain release work. The earlier production HTTP acceptance and its source revision are recorded above; no live benchmark evidence is implied by the new browser checks.
 
 The owner inputs still needed for live validation are a Solari key, one model-provider key, an available model/template and an intended paid smoke scope. Configure them privately in the Vercel production environment and redeploy. After readiness, begin with T01/T02 once at concurrency one; review real evidence, provider usage and actual desktop cleanup before expanding. The coding agent can perform execution, investigation and fixes once those inputs and scope are available.
 
@@ -402,7 +406,7 @@ The filter check needs Node; the package build command needs `uv`. Builds and un
 
 ## Remaining engineering work for the coding agent
 
-The inspection/review/comparison/gate loop and cloud execution adapters are implemented. Cloud mode adds owner authentication and persistent job identity, with production HTTP acceptance complete; remaining work includes complete authenticated browser interaction coverage, live desktop validation, explicit cancellation and provider reconciliation. It is a single-owner product, not a multi-tenant service. Local tests do not establish live provider behavior.
+The inspection/review/comparison/gate loop and cloud execution adapters are implemented. Cloud mode adds owner authentication and persistent job identity, with production HTTP acceptance complete; the presentation release additionally verifies core authenticated browser interactions. Remaining work includes broader browser/device coverage, live desktop validation, explicit cancellation and provider reconciliation. It is a single-owner product, not a multi-tenant service. Local tests do not establish live provider behavior.
 
 | Priority | Work | Done when |
 |---|---|---|
@@ -412,7 +416,7 @@ The inspection/review/comparison/gate loop and cloud execution adapters are impl
 | 4 | Extend durable cloud jobs with cancellation and provider reconciliation | Browser closure preserves execution; explicit cancellation retains partial evidence and reconciles desktop cleanup. Continuation must validate provenance and remain distinct from a new attempt |
 | 5 | Confirm a supported snapshot/fork path and pin the prepared environment | Independent forks reproduce fixtures and demonstrably reduce setup work |
 | 6 | Validate reviewer workflow and extend export/analysis | Review real failures, preserve metadata backups, and make reviewed comparisons useful without rewriting verifier outcomes |
-| 7 | Extend hosted-product browser coverage and release operations | Complete authenticated browser workflows, persistence across redeployment, deployment rollback and recovery are verified; the production HTTP execution/review/comparison loop already passes |
+| 7 | Extend hosted-product browser coverage and release operations | Broader keyboard/error-state/device checks, persistence across redeployment, deployment rollback and recovery are verified; the production HTTP loop and recorded core browser workflow already pass |
 
 The original snapshot flow is not implemented because the installed Solari SDK does not expose the spec's assumed `from_snapshot` create argument. That limitation must be resolved against a supported interface before adding snapshot reuse. Actual desktop costs are also not part of the token estimate. The project has no automatic run resumption, remote resource sweeper, current-price lookup, hard budget cap, or multi-user roles.
 

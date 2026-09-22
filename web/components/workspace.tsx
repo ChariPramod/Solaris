@@ -1375,8 +1375,8 @@ function RunInspector({
             )}
             {run.recovery && (
               <Notice>
-                Recovered local snapshot. Missing trials and cleanup uncertainty
-                remain; recovery did not rerun tasks.
+                Recovered evidence snapshot. Missing trials and cleanup
+                uncertainty remain; recovery did not rerun tasks.
               </Notice>
             )}
             <Tabs defaultValue="trials">
@@ -1474,7 +1474,7 @@ function RunInspector({
               </TabsContent>
               <TabsContent value="audit">
                 <p className="muted mb-4">
-                  Read-only inspection of local records and lifecycle evidence.
+                  Read-only inspection of saved records and lifecycle evidence.
                   Remote desktop status is not queried.
                 </p>
                 <Button
@@ -1507,7 +1507,7 @@ function RunInspector({
                   <div className="audit-results">
                     <Notice tone={audit.healthy ? "info" : "warning"}>
                       {audit.healthy
-                        ? "No local inconsistencies found. A clean audit does not mean tasks passed."
+                        ? "No recorded inconsistencies found. A clean audit does not mean tasks passed."
                         : `${audit.findings.length} findings need review. No artifacts or desktops were changed.`}
                     </Notice>
                     <div className="audit-counts">
