@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { cloudEnabled, readCloudRun } from "@/lib/cloud-artifacts";
 import { cloudOrigin } from "@/lib/cloud-auth";
-import { getPublicCloudJob, startCloudRun } from "@/lib/cloud-runner";
-import { listKeys } from "@/lib/cloud-storage";
+import { startCloudRun } from "@/lib/cloud-runner";
+import { listCloudJobs } from "@/lib/cloud-job-list";
 import { setupSchema } from "@/lib/harness";
 import { body, failure, json, localRequest } from "@/lib/http";
 import { StoreError } from "@/lib/store";
@@ -18,20 +18,9 @@ const inputSchema = z
 export async function GET(request: Request) {
   try {
     localRequest(request);
-    if (!cloudEnabled()) return json({ jobs: [] });
-    const listing = await listKeys("jobs/", 200);
-    const jobs = [];
-    for (let i = 0; i < listing.keys.length; i += 8) {
-      jobs.push(
-        ...(await Promise.all(
-          listing.keys
-            .slice(i, i + 8)
-            .map((key) => getPublicCloudJob(key.slice(5, -5))),
-        )),
-      );
-    }
-    jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return json({ jobs, truncated: listing.truncated });
+    if (!cloudEnabled())
+      return json({ jobs: [], warnings: [], truncated: false });
+    return json(await listCloudJobs());
   } catch (e) {
     return failure(e);
   }

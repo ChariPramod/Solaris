@@ -6,6 +6,8 @@ Gauntlet evaluates computer-use agents on reproducible GUI tasks in isolated Sol
 
 The current source iteration adds review notes, playback, saved setups, linked dry reruns, and shared CLI/web comparisons and regression gates (see “Evaluation loop” below). Version 0.8 adds an optional infrastructure failure limit that stops queued trials while active trials finish cleanup. Reports retain the stop reason and original plan, including in recovery exports and comparisons. It builds on v0.7 automatic preflight, failure-stage diagnostics, and strict task-failure exits. See the [detailed project handoff](PROJECT_HANDOFF.md) for completed work, verification, step-by-step live setup, and the remaining user inputs; the [iterative execution plan](ITERATION_PLAN.md) tracks acceptance criteria.
 
+For a plain-language pitch, a five-minute walkthrough using real saved evidence, and an honest list of presentation limits, see the [presentation guide](docs/PRESENTATION.md).
+
 ## Hosted product and public source
 
 The public source repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The product is deployed at **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612`: owner sessions, two real cloud diagnostic jobs, persisted evidence, reviews/presets, linked attempts, Python comparisons and gates. This deployment uses the actual Python evaluation harness, private persistent evidence storage, and isolated execution workers. It does not substitute prerecorded demo results for execution.

@@ -7,6 +7,7 @@ import { Badge } from "./ui/badge";
 import { api } from "@/lib/client";
 import { dateLabel, prettyName } from "@/lib/domain";
 import type { PublicCloudJob } from "@/lib/cloud-runner";
+import type { CloudJobList } from "@/lib/cloud-job-list";
 
 export function CloudJobs({
   revision,
@@ -20,6 +21,8 @@ export function CloudJobs({
   const [jobs, setJobs] = useState<PublicCloudJob[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const signature = useRef("");
   useEffect(() => {
@@ -27,7 +30,7 @@ export function CloudJobs({
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        const data = await api<{ jobs: PublicCloudJob[] }>("/api/jobs", {
+        const data = await api<CloudJobList>("/api/jobs", {
           signal: abort.signal,
         });
         if (abort.signal.aborted) return;
@@ -37,6 +40,8 @@ export function CloudJobs({
         if (signature.current && next !== signature.current) onChange();
         signature.current = next;
         setJobs(data.jobs);
+        setWarnings(data.warnings ?? []);
+        setTruncated(data.truncated ?? false);
         setLoaded(true);
         setError("");
       } catch (e) {
@@ -80,6 +85,34 @@ export function CloudJobs({
           starting another attempt.
         </p>
       )}
+      {warnings.length > 0 && (
+        <div
+          role="status"
+          className="mb-3 rounded-lg border p-3 text-sm text-muted-foreground"
+        >
+          <p>
+            Some job entries could not be loaded. Available jobs remain below.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {warnings.slice(0, 3).map((warning) => (
+              <li key={warning} className="break-words">
+                {warning}
+              </li>
+            ))}
+          </ul>
+          {warnings.length > 3 && (
+            <p className="mt-2">
+              {warnings.length - 3} more job warnings. Refresh to retry loading.
+            </p>
+          )}
+        </div>
+      )}
+      {truncated && (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          The job listing reached its 200-entry limit. This is a partial
+          archive, sorted within the loaded entries.
+        </p>
+      )}
       {!loaded && !error && (
         <p role="status" className="flex items-center gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" />
@@ -88,8 +121,9 @@ export function CloudJobs({
       )}
       {loaded && jobs.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No jobs yet. Create an evaluation to run the harness in an isolated
-          worker.
+          {warnings.length || truncated
+            ? "No readable jobs in this listing. Refresh status before starting another attempt."
+            : "No jobs yet. Create an evaluation to run the harness in an isolated worker."}
         </p>
       )}
       <div className="space-y-3">
@@ -136,7 +170,8 @@ export function CloudJobs({
       </div>
       {jobs.length > 12 && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Showing the latest 12 jobs. Saved evaluations remain in the library.
+          Showing the latest 12 loaded jobs. Saved evaluations remain in the
+          library.
         </p>
       )}
     </section>

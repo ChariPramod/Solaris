@@ -30,6 +30,14 @@ Browser verification on the published deployment covered the sign-in layout and 
 
 Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. There is no automatic replay, resume, cancellation UI, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
 
+## Presentation readiness
+
+Use [docs/PRESENTATION.md](docs/PRESENTATION.md) for the 30-second pitch, five-minute product walkthrough, accepted diagnostic run IDs, audience questions, provider-setup steps and release checklist. Present Solaris as a working single-owner evaluation product with verified cloud diagnostics. Do not describe dry-run failures, a passing diagnostic gate or unit-test counts as live-agent reliability evidence.
+
+The current presentation work adds clearer first-visit product explanation and guided setup/readiness. Those UI changes still need deployment and browser verification; this section does not certify them. A complete authenticated desktop/mobile walkthrough and an exercised rollback/restore remain release checks. The completed production HTTP acceptance and its exact source revision are recorded above.
+
+The owner inputs still needed for live validation are a Solari key, one model-provider key, an available model/template and an intended paid smoke scope. Configure them privately in the Vercel production environment and redeploy. After readiness, begin with T01/T02 once at concurrency one; review real evidence, provider usage and actual desktop cleanup before expanding. The coding agent can perform execution, investigation and fixes once those inputs and scope are available.
+
 ## Use the local interface now
 
 No account setup is needed to browse saved runs or execute local diagnostics. The production preview is **http://127.0.0.1:3000** while its local server is running. To restart it from the Solaris project root:

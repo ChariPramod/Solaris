@@ -1,4 +1,6 @@
 "use client";
+import { WorkspaceIntro } from "./workspace-intro";
+import { CloudLiveLaunch } from "./cloud-live-launch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
@@ -233,12 +235,12 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
       </a>
       <div className="workspace-shell">
         <aside className="sidebar">
-          <a className="brand" href="/" aria-label="Gauntlet home">
+          <a className="brand" href="/" aria-label="Solaris home">
             <span className="brand-mark">
               <Layers3 size={22} />
             </span>
             <span>
-              gauntlet<span className="brand-sub">WORKSPACE</span>
+              solaris<span className="brand-sub">WORKSPACE</span>
             </span>
           </a>
           <div className="workspace-switch">
@@ -356,6 +358,19 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                 </div>
                 {view === "runs" && (
                   <>
+                    {cloud && (
+                      <WorkspaceIntro
+                        library={library}
+                        onOpen={setSelected}
+                        onCreate={() => {
+                          setRerunSource(null);
+                          setTaskPreset(null);
+                          setDialogVersion((v) => v + 1);
+                          setCreate(true);
+                        }}
+                        onReadiness={() => setView("readiness")}
+                      />
+                    )}
                     {cloud && (
                       <CloudJobs
                         revision={jobsRevision}
@@ -1206,22 +1221,11 @@ function NewEvaluation({
                 : "Run this from the project root after configuring credentials. Live commands create billable desktops and model requests."}
             </Notice>
             {cloud && (
-              <Button
-                className="primary-button w-full"
-                disabled={
-                  busy ||
-                  !setup.tasks.length ||
-                  (setup.provider === "openai" && !setup.modelId)
-                }
-                onClick={() => launchCloud("live")}
-              >
-                {busy ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <FlaskConical size={16} />
-                )}
-                {busy ? "Starting worker…" : "Start live evaluation"}
-              </Button>
+              <CloudLiveLaunch
+                setup={setup}
+                busy={busy}
+                onLaunch={() => void launchCloud("live")}
+              />
             )}
             {cloud && (
               <p className="mt-4 mb-2 text-xs text-muted-foreground">
