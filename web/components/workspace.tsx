@@ -677,7 +677,7 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                     }}
                   />
                 )}
-                {view === "readiness" && <ReadinessPanel />}
+                {view === "readiness" && <ReadinessPanel cloud={cloud} />}
               </motion.div>
             </AnimatePresence>
           </main>
@@ -797,7 +797,7 @@ const defaultSetup: RunSetup = {
   provider: "claude",
   modelId: "",
 };
-function ReadinessPanel() {
+function ReadinessPanel({ cloud = false }: { cloud?: boolean }) {
   const [setup, setSetup] = useState(defaultSetup);
   const [result, setResult] = useState<Readiness | null>(null);
   const [error, setError] = useState("");
@@ -806,12 +806,13 @@ function ReadinessPanel() {
     <div className="readiness-layout">
       <section className="surface">
         <div className="section-heading">
-          <h2>Local readiness</h2>
+          <h2>{cloud ? "Cloud readiness" : "Local readiness"}</h2>
           <ShieldCheck size={20} />
         </div>
         <p className="muted">
-          Checks credential presence, dependencies, and packaged fixtures. No
-          authentication or paid requests.
+          {cloud
+            ? "Checks server credentials, storage access and the published execution source. No desktops or model requests are started."
+            : "Checks credential presence, dependencies, and packaged fixtures. No authentication or paid requests."}
         </p>
         <div className="form-grid">
           <label>
@@ -862,7 +863,9 @@ function ReadinessPanel() {
                 await api("/api/preflight", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ setup, dryRun: false }),
+                  body: JSON.stringify(
+                    cloud ? setup : { setup, dryRun: false },
+                  ),
                 }),
               );
             } catch (e) {
@@ -884,7 +887,9 @@ function ReadinessPanel() {
           <div className="check-results">
             <h3>
               {result.ready
-                ? "Local checks passed"
+                ? cloud
+                  ? "Cloud configuration checks passed"
+                  : "Local checks passed"
                 : "Resolve these checks before a live run"}
             </h3>
             {result.checks.map((c) => (
@@ -909,8 +914,9 @@ function ReadinessPanel() {
         </span>
         <h2>Keep your keys in your environment.</h2>
         <p>
-          This workspace never asks you to paste a secret. Configure credentials
-          in the terminal that starts the app, then check readiness again.
+          {cloud
+            ? "Add provider credentials to the Vercel project’s production environment variables, redeploy, then check readiness again. Keep provider keys out of the browser and source code."
+            : "Configure provider credentials in the terminal that starts the app, then check readiness again. Keep provider keys out of the browser and source code."}
         </p>
         <div className="guide-step">
           <span>01</span>
@@ -934,8 +940,8 @@ function ReadinessPanel() {
           </div>
         </div>
         <Notice>
-          Local checks cannot validate account access, model compatibility, or
-          the desktop template.
+          Configuration checks cannot validate account access, model
+          compatibility, or the desktop template.
         </Notice>
       </section>
     </div>

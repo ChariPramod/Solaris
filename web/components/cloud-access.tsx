@@ -47,6 +47,9 @@ export function CloudAccess({
       });
     return () => abort.abort();
   }, [cloud]);
+  useEffect(() => {
+    if (cloud) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [authenticated, cloud]);
   if (!cloud) return children;
   if (authenticated)
     return (

@@ -1,8 +1,26 @@
+import { z } from "zod";
 import { setupSchema } from "./harness";
 import type { Check, Readiness } from "./types";
 import { listKeys } from "./cloud-storage";
-export async function checkCloudReadiness(raw: unknown): Promise<Readiness> {
-  const setup = setupSchema.parse(raw);
+const inputSchema = z.union([
+  setupSchema,
+  // Older workspace clients send the local preflight envelope. This endpoint
+  // checks live readiness only; accepting dryRun:true would misstate its scope.
+  z
+    .object({ setup: setupSchema, dryRun: z.literal(false) })
+    .strict()
+    .transform(({ setup }) => setup),
+]);
+type Dependencies = {
+  env?: Record<string, string | undefined>;
+  listKeys?: typeof listKeys;
+};
+export async function checkCloudReadiness(
+  raw: unknown,
+  deps: Dependencies = {},
+): Promise<Readiness> {
+  const setup = inputSchema.parse(raw);
+  const env = deps.env ?? process.env;
   const checks: Check[] = [];
   for (const [name, key] of [
     ["Computer provider", "SOLARI_API_KEY"],
@@ -11,10 +29,11 @@ export async function checkCloudReadiness(raw: unknown): Promise<Readiness> {
       setup.provider === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY",
     ],
   ]) {
+    const configured = Boolean(env[key]?.trim());
     checks.push({
       name,
-      status: process.env[key] ? "pass" : "fail",
-      message: process.env[key]
+      status: configured ? "pass" : "fail",
+      message: configured
         ? "Server credential configured; live authentication is checked when execution starts."
         : `Configure ${key} in Vercel environment variables to run live evaluations.`,
     });
@@ -26,7 +45,7 @@ export async function checkCloudReadiness(raw: unknown): Promise<Readiness> {
       message: "Select an OpenAI model.",
     });
   try {
-    await listKeys("jobs/", 1);
+    await (deps.listKeys ?? listKeys)("jobs/", 1);
     checks.push({
       name: "Durable storage",
       status: "pass",
@@ -40,8 +59,7 @@ export async function checkCloudReadiness(raw: unknown): Promise<Readiness> {
         "Private storage is unavailable. Existing evidence is preserved.",
     });
   }
-  const revision =
-    process.env.GAUNTLET_SOURCE_REVISION || process.env.VERCEL_GIT_COMMIT_SHA;
+  const revision = env.GAUNTLET_SOURCE_REVISION || env.VERCEL_GIT_COMMIT_SHA;
   checks.push({
     name: "Execution source",
     status: revision && /^[a-f0-9]{40}$/i.test(revision) ? "pass" : "fail",
