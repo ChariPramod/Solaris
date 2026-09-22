@@ -1,3 +1,5 @@
+import { cloudEnabled } from "@/lib/cloud-artifacts";
+import { StoreError } from "@/lib/store";
 import { recordAttempt } from "@/lib/workspace-data";
 import { launchDryRun } from "@/lib/harness";
 import { readRun } from "@/lib/store";
@@ -9,6 +11,11 @@ export async function POST(
 ) {
   try {
     localRequest(request, true);
+    if (cloudEnabled())
+      throw new StoreError(
+        "Use the cloud jobs endpoint to launch an evaluation.",
+        400,
+      );
     const { id } = await context.params;
     await readRun(id);
     const result = await launchDryRun(await body(request));

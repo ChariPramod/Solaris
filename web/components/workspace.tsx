@@ -74,6 +74,8 @@ import { TrialEvidence } from "@/components/trial-evidence";
 import { RunAssessment } from "@/components/run-assessment";
 import { SavedSetups } from "@/components/saved-setups";
 import { AttemptHistory } from "@/components/attempt-history";
+import { CloudJobs } from "@/components/cloud-jobs";
+import type { PublicCloudJob } from "@/lib/cloud-runner";
 import { cn } from "@/lib/utils";
 
 function Status({ status }: { status: string }) {
@@ -149,7 +151,7 @@ function Metric({
   );
 }
 
-export function Workspace() {
+export function Workspace({ cloud = false }: { cloud?: boolean }) {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -162,6 +164,7 @@ export function Workspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [create, setCreate] = useState(false);
   const [toast, setToast] = useState("");
+  const [jobsRevision, setJobsRevision] = useState(0);
   const mounted = useRef(true);
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -242,7 +245,7 @@ export function Workspace() {
             <div className="workspace-avatar">S</div>
             <div>
               <strong>Solaris</strong>
-              <span>Local workspace</span>
+              <span>{cloud ? "Cloud workspace" : "Local workspace"}</span>
             </div>
             <span className="local-dot" />
           </div>
@@ -275,8 +278,14 @@ export function Workspace() {
           <div className="sidebar-bottom">
             <div className="local-card">
               <span className="local-dot" />
-              <strong>Everything stays local</strong>
-              <p>Inspect evidence and test the harness. No cloud upload.</p>
+              <strong>
+                {cloud ? "Evidence that persists" : "Everything stays local"}
+              </strong>
+              <p>
+                {cloud
+                  ? "Isolated workers. Durable evidence. Review every outcome."
+                  : "Inspect evidence and test the harness. No cloud upload."}
+              </p>
             </div>
             <div className="version">
               <span>GAUNTLET</span>
@@ -300,7 +309,7 @@ export function Workspace() {
             <div className="topbar-right">
               <span className="local-badge">
                 <span className="local-dot" />
-                LOCAL
+                {cloud ? "CLOUD" : "LOCAL"}
               </span>
               <span className="avatar">S</span>
             </div>
@@ -329,7 +338,7 @@ export function Workspace() {
                         ? "From first action to verified outcome."
                         : view === "tasks"
                           ? "Twelve tasks. Real applications. State-verified outcomes."
-                          : "Check your local environment before creating a desktop."}
+                          : "Check your environment before creating a desktop."}
                     </p>
                   </div>
                   <Button
@@ -347,11 +356,22 @@ export function Workspace() {
                 </div>
                 {view === "runs" && (
                   <>
+                    {cloud && (
+                      <CloudJobs
+                        revision={jobsRevision}
+                        onOpen={setSelected}
+                        onChange={refresh}
+                      />
+                    )}
                     <div className="metrics-grid">
                       <Metric
                         label="Saved evaluations"
                         value={library ? runs.length : "—"}
-                        detail="From your local results folder"
+                        detail={
+                          cloud
+                            ? "From persistent cloud evidence"
+                            : "From your local results folder"
+                        }
                         icon={Layers3}
                       />
                       <Metric
@@ -588,8 +608,8 @@ export function Workspace() {
                         <span>
                           <Database size={13} />{" "}
                           {library
-                            ? "Reading local artifacts"
-                            : "Connecting to local artifacts"}
+                            ? "Reading saved artifacts"
+                            : "Connecting to saved artifacts"}
                         </span>
                         <span>
                           {library
@@ -623,7 +643,9 @@ export function Workspace() {
                         </span>
                         <div>
                           <h3>Make the first live run count</h3>
-                          <p>Check dependencies, keys, and local readiness.</p>
+                          <p>
+                            Check dependencies, keys, and execution readiness.
+                          </p>
                         </div>
                         <ArrowRight size={18} />
                       </button>
@@ -647,8 +669,10 @@ export function Workspace() {
           <footer className="workspace-footer">
             <span>Evidence over assumptions.</span>
             <span>
-              <span className="local-dot" /> Local workspace · no external
-              telemetry
+              <span className="local-dot" />{" "}
+              {cloud
+                ? "Cloud workspace · persistent evidence"
+                : "Local workspace · no external telemetry"}
             </span>
           </footer>
         </div>
@@ -667,6 +691,16 @@ export function Workspace() {
           onClose={() => setSelected(null)}
         />
         <NewEvaluation
+          cloud={cloud}
+          onJobCreated={(job) => {
+            setCreate(false);
+            setView("runs");
+            setJobsRevision((value) => value + 1);
+            setToast(
+              job.error ||
+                `Job ${prettyName(job.status).toLowerCase()}. Track progress in Execution jobs.`,
+            );
+          }}
           key={dialogVersion}
           preset={taskPreset}
           source={rerunSource}
@@ -893,12 +927,16 @@ function ReadinessPanel() {
   );
 }
 function NewEvaluation({
+  cloud,
+  onJobCreated,
   open,
   onOpenChange,
   onCreated,
   preset,
   source,
 }: {
+  cloud: boolean;
+  onJobCreated: (job: PublicCloudJob) => void;
   source: Run | null;
   preset: string | null;
   open: boolean;
@@ -931,6 +969,29 @@ function NewEvaluation({
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const command = liveCommand(setup);
+  async function launchCloud(mode: "dry-run" | "live") {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<PublicCloudJob>("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setup,
+          mode,
+          ...(source ? { parentId: source.id } : {}),
+        }),
+      });
+      onJobCreated(result);
+    } catch (e) {
+      setError(
+        (e as Error).message +
+          " Check Execution jobs before trying again; a disconnected request may still be running.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <Dialog
       open={open}
@@ -945,14 +1006,18 @@ function NewEvaluation({
           </div>
           <DialogTitle>New evaluation</DialogTitle>
           <DialogDescription>
-            Start with a local dry run, or prepare your live command.
+            {cloud
+              ? "Run diagnostics or launch a live evaluation in an isolated cloud worker."
+              : "Start with a local dry run, or prepare your live command."}
           </DialogDescription>
         </DialogHeader>
         {source && (
           <Notice>
-            Local diagnostics will create an attempt linked to {source.id}.
-            Copied live commands create independent runs without an automatic
-            link. Task selection and supported limits are copied into this form;
+            {cloud ? "This evaluation" : "Local diagnostics"} will create an
+            attempt linked to {source.id}.
+            {!cloud &&
+              " Copied live commands create independent runs without an automatic link."}{" "}
+            Task selection and supported limits are copied into this form;
             current task code is used. Environment, pricing and other advanced
             settings are not copied. Review the configuration before running.
           </Notice>
@@ -964,7 +1029,7 @@ function NewEvaluation({
               Dry run
             </TabsTrigger>
             <TabsTrigger value="live" className="flex-1">
-              Live command
+              {cloud ? "Live evaluation" : "Live command"}
             </TabsTrigger>
           </TabsList>
           <fieldset disabled={busy}>
@@ -1052,6 +1117,7 @@ function NewEvaluation({
               className="primary-button w-full"
               disabled={busy || !setup.tasks.length}
               onClick={async () => {
+                if (cloud) return launchCloud("dry-run");
                 setBusy(true);
                 setError("");
                 try {
@@ -1093,7 +1159,13 @@ function NewEvaluation({
               ) : (
                 <FlaskConical size={16} />
               )}{" "}
-              {busy ? "Running local diagnostics…" : "Run local diagnostics"}
+              {busy
+                ? cloud
+                  ? "Starting worker…"
+                  : "Running local diagnostics…"
+                : cloud
+                  ? "Run cloud diagnostics"
+                  : "Run local diagnostics"}
             </Button>
           </TabsContent>
           <TabsContent value="live">
@@ -1101,6 +1173,7 @@ function NewEvaluation({
               <label>
                 Provider
                 <Select
+                  disabled={busy}
                   value={setup.provider}
                   onValueChange={(v) =>
                     setSetup({ ...setup, provider: v as RunSetup["provider"] })
@@ -1118,6 +1191,7 @@ function NewEvaluation({
               <label>
                 Model ID
                 <Input
+                  disabled={busy}
                   value={setup.modelId}
                   onChange={(e) =>
                     setSetup({ ...setup, modelId: e.target.value })
@@ -1127,9 +1201,34 @@ function NewEvaluation({
               </label>
             </div>
             <Notice tone="warning">
-              Run this from the project root after configuring credentials. Live
-              commands create billable desktops and model requests.
+              {cloud
+                ? "Uses the provider credentials configured on the server. Starting a live evaluation creates billable desktops and model requests."
+                : "Run this from the project root after configuring credentials. Live commands create billable desktops and model requests."}
             </Notice>
+            {cloud && (
+              <Button
+                className="primary-button w-full"
+                disabled={
+                  busy ||
+                  !setup.tasks.length ||
+                  (setup.provider === "openai" && !setup.modelId)
+                }
+                onClick={() => launchCloud("live")}
+              >
+                {busy ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <FlaskConical size={16} />
+                )}
+                {busy ? "Starting worker…" : "Start live evaluation"}
+              </Button>
+            )}
+            {cloud && (
+              <p className="mt-4 mb-2 text-xs text-muted-foreground">
+                Terminal fallback for a separately configured local
+                installation:
+              </p>
+            )}
             <pre className="command-preview">{command}</pre>
             <Button
               variant="outline"

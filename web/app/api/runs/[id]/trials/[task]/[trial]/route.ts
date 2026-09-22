@@ -1,3 +1,4 @@
+import { cloudEnabled, readCloudTrial } from "@/lib/cloud-artifacts";
 import { readTrial } from "@/lib/store";
 import { failure, json, localRequest } from "@/lib/http";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,13 @@ export async function GET(
   try {
     localRequest(request);
     const p = await context.params;
-    return json(await readTrial(p.id, p.task, Number(p.trial)));
+    return json(
+      await (cloudEnabled() ? readCloudTrial : readTrial)(
+        p.id,
+        p.task,
+        Number(p.trial),
+      ),
+    );
   } catch (e) {
     return failure(e);
   }

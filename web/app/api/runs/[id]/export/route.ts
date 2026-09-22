@@ -1,4 +1,9 @@
 import { readRun, safeFile, RESULTS_ROOT } from "@/lib/store";
+import {
+  cloudEnabled,
+  readCloudRun,
+  readCloudArtifact,
+} from "@/lib/cloud-artifacts";
 import { failure, localRequest } from "@/lib/http";
 export const dynamic = "force-dynamic";
 export async function GET(
@@ -8,12 +13,11 @@ export async function GET(
   try {
     localRequest(request);
     const { id } = await context.params;
-    await readRun(id);
-    const bytes = await safeFile(
-      RESULTS_ROOT,
-      [id, "results.json"],
-      16 * 1024 * 1024,
-    );
+    const cloud = cloudEnabled();
+    await (cloud ? readCloudRun : readRun)(id);
+    const bytes = cloud
+      ? await readCloudArtifact(id, "results.json", 16 * 1024 * 1024)
+      : await safeFile(RESULTS_ROOT, [id, "results.json"], 16 * 1024 * 1024);
     return new Response(new Uint8Array(bytes), {
       headers: {
         "Content-Type": "application/json",

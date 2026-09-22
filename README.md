@@ -6,9 +6,17 @@ Gauntlet evaluates computer-use agents on reproducible GUI tasks in isolated Sol
 
 The current source iteration adds review notes, playback, saved setups, linked dry reruns, and shared CLI/web comparisons and regression gates (see “Evaluation loop” below). Version 0.8 adds an optional infrastructure failure limit that stops queued trials while active trials finish cleanup. Reports retain the stop reason and original plan, including in recovery exports and comparisons. It builds on v0.7 automatic preflight, failure-stage diagnostics, and strict task-failure exits. See the [detailed project handoff](PROJECT_HANDOFF.md) for completed work, verification, step-by-step live setup, and the remaining user inputs; the [iterative execution plan](ITERATION_PLAN.md) tracks acceptance criteria.
 
-## Interactive workspace
+## Hosted product and public source
 
-The new local Next.js workspace adds a run library, filters, trial matrix, screenshots/actions/evidence, read-only audits, task selection, readiness checks, manifest downloads, a credential-free dry-run launcher, and a live-command builder. It uses TypeScript, Tailwind CSS v4, shadcn/ui, Lucide, Motion, and a selective Magic UI accent.
+The public source repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The Vercel deployment target is [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app); deployment and end-to-end cloud verification are in progress. This deployment uses the actual Python evaluation harness, private persistent evidence storage, and isolated execution workers. It does not substitute prerecorded demo results for execution.
+
+Cloud mode adds owner access-key sign-in, durable jobs, real dry/live evaluation launches, saved reviews and configurations, attempt history, comparisons and regression gates. Live execution requires separately configured Solari and selected-provider credentials and has not yet been verified. A cloud dry run exercises the harness without model calls or desktops, but Vercel worker/storage usage may still be billable.
+
+See [the Vercel deployment and operations guide](docs/VERCEL.md) for setup, private storage, authentication, recovery, operating limits, and remaining validation. GitHub Pages cannot run the authenticated API, persistent storage adapters or Python workers; the repository is public while workspace data remains private.
+
+## Local workspace
+
+The Next.js workspace adds a run library, filters, trial matrix, screenshots/actions/evidence, read-only audits, task selection, readiness checks, manifest downloads, a credential-free dry-run launcher, and a live-command builder. It uses TypeScript, Tailwind CSS v4, shadcn/ui, Lucide, Motion, and a selective Magic UI accent.
 
 With Node 22.17+ installed, from the project root:
 
@@ -17,7 +25,7 @@ npm --prefix web ci
 npm --prefix web run dev
 ```
 
-Open **http://127.0.0.1:3000**. Existing `results/` runs appear automatically. No credentials are needed to browse artifacts or launch a dry run. See [web/README.md](web/README.md) for production startup, environment overrides, tests, fallback behavior, and operating limits. Keep this single-user workspace on localhost; it depends on the local checkout/Python process and is not a hosted service. The Python harness remains v0.8; the separate workspace package is v0.9.
+Open **http://127.0.0.1:3000**. Existing `results/` runs appear automatically. No credentials are needed to browse artifacts or launch a dry run. See [web/README.md](web/README.md) for production startup, environment overrides, tests, fallback behavior, and operating limits. Local mode remains a single-user loopback application using the checkout and its Python process. Use the dedicated cloud configuration in [docs/VERCEL.md](docs/VERCEL.md) for Vercel; exposing the local server publicly is not the cloud deployment path. The Python harness remains v0.8; the separate workspace package is v0.9.
 
 ## Quickstart
 

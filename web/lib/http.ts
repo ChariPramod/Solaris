@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { StoreError } from "./store";
+import { cloudRequest } from "./cloud-auth";
 export function localRequest(request: Request, write = false) {
+  if (process.env.GAUNTLET_STORAGE === "vercel")
+    return cloudRequest(request, write);
   const host = request.headers.get("host");
   const loopback = ["localhost", "127.0.0.1", "[::1]"];
   let hostUrl: URL;

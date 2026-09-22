@@ -60,7 +60,7 @@ export type RunCard = Omit<Run, "records" | "tasks" | "configuration"> & {
 export type Library = {
   runs: RunCard[];
   warnings: string[];
-  source: "local";
+  source: "local" | "cloud";
   scannedAt: string;
 };
 export type ActionFrame = {

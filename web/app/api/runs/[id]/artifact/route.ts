@@ -1,4 +1,9 @@
 import { readRun, safeFile, RESULTS_ROOT, StoreError } from "@/lib/store";
+import {
+  cloudEnabled,
+  readCloudRun,
+  readCloudArtifact,
+} from "@/lib/cloud-artifacts";
 import { failure, localRequest } from "@/lib/http";
 export const dynamic = "force-dynamic";
 export async function GET(
@@ -18,16 +23,23 @@ export async function GET(
       !/^(?:\d{3,6}|final)\.jpg$/.test(name)
     )
       throw new StoreError("Invalid screenshot path.");
-    const run = await readRun(id);
+    const cloud = cloudEnabled();
+    const run = await (cloud ? readCloudRun : readRun)(id);
     if (
       !run.records.some((r) => r.task_id === task && r.trial === Number(trial))
     )
       throw new StoreError("Trial not found.", 404);
-    const image = await safeFile(
-      RESULTS_ROOT,
-      [id, task, String(Number(trial)), name],
-      10 * 1024 * 1024,
-    );
+    const image = cloud
+      ? await readCloudArtifact(
+          id,
+          `${task}/${Number(trial)}/${name}`,
+          10 * 1024 * 1024,
+        )
+      : await safeFile(
+          RESULTS_ROOT,
+          [id, task, String(Number(trial)), name],
+          10 * 1024 * 1024,
+        );
     if (image[0] !== 0xff || image[1] !== 0xd8)
       throw new StoreError("Screenshot is not a valid JPEG.", 415);
     return new Response(new Uint8Array(image), {

@@ -58,7 +58,7 @@ const descriptorSchema = z.object({
   mode: z.string(),
   status: z.string(),
 });
-const comparisonSchema = z.object({
+export const comparisonSchema = z.object({
   schema_version: z.literal(1),
   candidate: descriptorSchema,
   baseline: descriptorSchema,
@@ -87,7 +87,7 @@ const comparisonSchema = z.object({
     }),
   ),
 });
-const gateSchema = z.object({
+export const gateSchema = z.object({
   schema_version: z.literal(1),
   passed: z.boolean(),
   warnings: z.array(z.string()),

@@ -1,20 +1,32 @@
 # Gauntlet project handoff
 
-Updated September 21, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
+Updated September 22, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
 
 ## Current state
 
-The local product is built: twelve GUI tasks, two model adapters, deterministic state checks, repeated-trial orchestration, an offline evidence dashboard, API cost estimates, and interrupted-run audit/recovery. The remaining critical milestone is a reviewed run on actual Solari desktops. **There are no real benchmark scores yet.** Dry-run failures are expected and do not measure model performance.
+The local product and cloud deployment implementation are built: twelve GUI tasks, two model adapters, deterministic state checks, repeated-trial orchestration, an offline evidence dashboard, API cost estimates, and interrupted-run audit/recovery. The remaining critical milestone is a reviewed run on actual Solari desktops. **There are no real benchmark scores yet.** Dry-run failures are expected and do not measure model performance.
 
 The **evaluation loop iteration** adds screenshot/action playback, durable human review notes, saved evaluation setups, explicit links between independent dry-run attempts, compatible-run comparison, and conservative regression gates. It extends the existing v0.9 local web workspace and v0.8 Python package source. Package version fields were not bumped and no new distribution was published; existing `dist/` wheels predate this iteration. Install this checkout in editable mode to use its new CLI commands.
 
-**Current verification:** 399 Python tests and 45 TypeScript tests pass, along with the optimized production build and real production HTTP integration. The integration uses an isolated temporary project and strips provider keys; it includes a forced `.write.lock` failure proving that a successful child run remains accessible when link storage fails. Chrome interaction checks passed on desktop and at a 390-pixel mobile viewport: playback/action synchronization, unsaved draft restoration across tabs, review saving, preset saving, linked dry rerun/history, compatible comparison and a correctly failing live-required gate. These browser checks are a recorded manual automation session, not a persistent browser CI suite. No paid requests or live benchmark runs were made.
+**Previous evaluation-loop verification:** 399 Python tests and 45 TypeScript tests passed, along with the optimized production build and real production HTTP integration. The integration uses an isolated temporary project and strips provider keys; it includes a forced `.write.lock` failure proving that a successful child run remains accessible when link storage fails. Chrome interaction checks passed on desktop and at a 390-pixel mobile viewport: playback/action synchronization, unsaved draft restoration across tabs, review saving, preset saving, linked dry rerun/history, compatible comparison and a correctly failing live-required gate. These browser checks are a recorded manual automation session, not a persistent browser CI suite. No paid requests or live benchmark runs were made.
 
 **Live validation remains pending:** the final local Claude preflight in this iteration found `SOLARI_API_KEY` and `ANTHROPIC_API_KEY` absent from the CLI environment. Its non-secret output is saved in `tmp/evaluation-loop-preflight.json`. OpenAI remains an alternative with its key and explicit model ID. Local checks cannot authenticate accounts or establish provider compatibility.
 
 The original [build spec](Solari%20Gauntlet%20Spec%20-%20Pinetree%20Research.md) remains unchanged. [README.md](README.md) documents the implemented interface; [ITERATION_PLAN.md](ITERATION_PLAN.md) records the sequence and acceptance criteria; [ROADMAP.md](ROADMAP.md) tracks scope and remaining engineering.
 
-## Use the new interface now
+## Public repository and Vercel product
+
+The source is published at [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The intended canonical product address is [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app). Deployment verification is still in progress at this handoff update; neither the address nor implemented code is proof that the complete hosted workflow has passed. The earlier hosted preview is superseded by this real backend deployment effort.
+
+Cloud mode implements access-key sessions, durable job records, private Blob evidence, revisioned reviews/presets, linked attempts, and detached Python workers. Both diagnostic and live launch buttons invoke the actual harness. The browser polls job state and can inspect evidence uploaded during execution. Comparisons and gates execute the authoritative Python CLI in a separate bounded sandbox using a pinned source commit; JavaScript does not invent replacement scores.
+
+The project is `solaris-gauntlet`, rooted at `web`, using Next.js and Node 22. Private Blob store `solaris-evidence` is in `iad1`. The owner key is stored only in ignored local `tmp/solaris-access-key.txt` and the server environment; its value must never be added to Git, screenshots, documentation or browser bundles. Sign-in uses a 12-hour secure HTTP-only cookie. See [docs/VERCEL.md](docs/VERCEL.md) for exact configuration, recovery procedures and unresolved work.
+
+**Cloud verification recorded so far:** the 82-test TypeScript suite and typecheck passed during implementation, including cloud storage, runner, ingestion, assessment and UI contract coverage. A real sandbox probe confirmed Python 3.13, pip and the checkout root `/vercel/sandbox`. This does not yet establish successful production sign-in, durable dry-run execution, review persistence or cross-run assessment; those checks remain part of deployment acceptance. No live desktop/model benchmark is verified.
+
+Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. There is no automatic replay, resume, cancellation UI, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
+
+## Use the local interface now
 
 No account setup is needed to browse saved runs or execute local diagnostics. The production preview is **http://127.0.0.1:3000** while its local server is running. To restart it from the Solaris project root:
 
@@ -40,7 +52,7 @@ For development, use `npm --prefix web run dev` instead of `start`; run only one
 
 The UI uses Next.js, TypeScript, Tailwind v4, shadcn/ui, Lucide, Motion, and one Magic UI Shine Border. Fonts are local; package scripts disable Next.js telemetry. It includes reduced-motion styling, responsive layouts, keyboard-accessible primitives, loading/empty/error states, retry controls, partial-log recovery, screenshot placeholders and a last-successful-library fallback during failed refreshes.
 
-Server controls reject unknown request fields, invalid paths, symlinks, special files, oversized artifacts, foreign hosts/origins, and concurrent dry launches within the same process. Dry-run subprocesses have provider keys removed, fixed arguments, a 90-second deadline and a five-second forced-stop fallback after SIGINT. Readiness/audit use 30 seconds. Readable partial results remain available after failure. This is a trusted single-user local app with no account authentication: keep it on loopback. It is not a cloud deployment, persistent job queue, spending cap, live process monitor or remote desktop cleanup service.
+Server controls reject unknown request fields, invalid paths, symlinks, special files, oversized artifacts, foreign hosts/origins, and concurrent dry launches within the same process. Dry-run subprocesses have provider keys removed, fixed arguments, a 90-second deadline and a five-second forced-stop fallback after SIGINT. Readiness/audit use 30 seconds. Readable partial results remain available after failure. This is a trusted single-user local app with no account authentication: keep it on loopback. These controls describe local mode. The separate cloud mode adds authentication, durable jobs and polled status as documented above; neither mode supplies a spending cap or remote desktop cleanup service.
 
 Detailed startup, limits, API behavior and attribution are in [web/README.md](web/README.md). Optional WebMCP list/inspection helpers degrade gracefully when unsupported; unit contract tests pass, but a live WebMCP runtime was not verified.
 
@@ -374,25 +386,25 @@ npm --prefix web run test:integration
 uv build
 ```
 
-The filter check needs Node; the package build command needs `uv`. Builds and unit tests do not authenticate keys or validate a real desktop. The current directory has no Git repository initialized, and no repository/site has been published. Existing artifacts are local files rather than durable hosted links.
+The filter check needs Node; the package build command needs `uv`. Builds and unit tests do not authenticate keys or validate a real desktop. The source is now in the public GitHub repository. Existing local artifacts remain local; they are not automatically uploaded. Cloud jobs persist their own evidence to private Blob storage. Deployment acceptance is tracked in [docs/VERCEL.md](docs/VERCEL.md).
 
 ## Remaining engineering work for the coding agent
 
-The local inspection/review/comparison/gate loop is implemented. The next engineering work is driven by live evidence and the limits below. Long-running jobs need persistent ownership, restart recovery and cancellation before hosted or multi-user operation; account authentication is also absent. Local tests do not establish those unimplemented capabilities.
+The inspection/review/comparison/gate loop and cloud execution adapters are implemented. Cloud mode adds owner authentication and persistent job identity, but still needs production end-to-end acceptance, live desktop validation, explicit cancellation and provider reconciliation. It is a single-owner product, not a multi-tenant service. Local tests do not establish live provider behavior.
 
 | Priority | Work | Done when |
 |---|---|---|
 | 1 | Investigate the first real T01/T02 and T08/T11 evidence, fix provisioning/interaction defects | Reviewed live trajectories, understandable verifier outcomes, confirmed desktop destruction |
 | 2 | Validate both adapters and reconcile token/API estimates with provider usage | Matching live runs with correct usage accounting and documented protocol differences |
 | 3 | Add provider inventory reconciliation and explicit run-scoped cleanup | Returned/lost allocations can be reconciled without touching unrelated resources |
-| 4 | Design durable job execution and provenance-checked continuation | Jobs survive server/browser restarts with explicit cancellation; interrupted work continues only with matching inputs. Current dry-rerun links already preserve independent attempts |
+| 4 | Extend durable cloud jobs with cancellation and provider reconciliation | Browser closure preserves execution; explicit cancellation retains partial evidence and reconciles desktop cleanup. Continuation must validate provenance and remain distinct from a new attempt |
 | 5 | Confirm a supported snapshot/fork path and pin the prepared environment | Independent forks reproduce fixtures and demonstrably reduce setup work |
 | 6 | Validate reviewer workflow and extend export/analysis | Review real failures, preserve metadata backups, and make reviewed comparisons useful without rewriting verifier outcomes |
-| 7 | Prepare a shareable demo and repository/release artifacts | Repeated live evidence, coverage review, cleanup, and presentation are complete |
+| 7 | Complete hosted-product acceptance and release operations | Sign-in, cloud diagnostics, persistence after refresh, review conflicts, comparison/gates, deployment rollback and recovery are verified on the canonical Vercel deployment |
 
-The original snapshot flow is not implemented because the installed Solari SDK does not expose the spec's assumed `from_snapshot` create argument. That limitation must be resolved against a supported interface before adding snapshot reuse. Actual desktop costs are also not part of the token estimate. The project has no automatic run resumption, remote resource sweeper, current-price lookup, hard budget cap, or public publication.
+The original snapshot flow is not implemented because the installed Solari SDK does not expose the spec's assumed `from_snapshot` create argument. That limitation must be resolved against a supported interface before adding snapshot reuse. Actual desktop costs are also not part of the token estimate. The project has no automatic run resumption, remote resource sweeper, current-price lookup, hard budget cap, or multi-user roles.
 
-Custom workflow/task builders, systematic resilience experiment matrices, cost/reliability frontier analysis, persistent jobs, and prepared-desktop snapshots remain future work. The current task selector and presets configure the twelve shipped tasks; they do not author new verifiers, launch experiment matrices, optimize cost, or resume interrupted jobs. Prioritize these extensions using reviewed live failures and measured setup/API costs. More local tests alone cannot close the live-validation gap.
+Custom workflow/task builders, systematic resilience experiment matrices, cost/reliability frontier analysis, resumable jobs, and prepared-desktop snapshots remain future work. The current task selector and presets configure the twelve shipped tasks; they do not author new verifiers, launch experiment matrices, optimize cost, or resume interrupted jobs. Prioritize these extensions using reviewed live failures and measured setup/API costs. More local tests alone cannot close the live-validation gap.
 
 ## User checklist
 
@@ -405,6 +417,6 @@ Custom workflow/task builders, systematic resilience experiment matrices, cost/r
 - [ ] Have the coding agent execute and review the smoke test after access and scope are ready; inspect the provider console yourself only where account/UI access requires you.
 - [ ] If you run commands yourself, give the coding agent the preserved run folder and nonsecret observations for any failures.
 - [ ] Let the coding agent validate T08/T11 and propose the paid scope for larger repeated comparisons when ready.
-- [ ] Choose a repository owner/name and intended audience when publication becomes useful; no publishing action is required to run locally.
+- [ ] Keep the owner access key private and review the cloud operating checklist in [docs/VERCEL.md](docs/VERCEL.md). Publication is authorized and the repository is public; there is no additional repository choice needed.
 
 The immediate next step is providing access and confirming the small paid smoke-test scope. The coding agent can then execute the test and continue the engineering backlog from its evidence.
