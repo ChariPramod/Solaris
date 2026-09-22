@@ -16,13 +16,17 @@ The original [build spec](Solari%20Gauntlet%20Spec%20-%20Pinetree%20Research.md)
 
 ## Public repository and Vercel product
 
-The source is published at [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The intended canonical product address is [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app). Deployment verification is still in progress at this handoff update; neither the address nor implemented code is proof that the complete hosted workflow has passed. The earlier hosted preview is superseded by this real backend deployment effort.
+The source is published at [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The deployed canonical product address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612`. The earlier hosted preview is superseded by this functioning backend deployment.
 
 Cloud mode implements access-key sessions, durable job records, private Blob evidence, revisioned reviews/presets, linked attempts, and detached Python workers. Both diagnostic and live launch buttons invoke the actual harness. The browser polls job state and can inspect evidence uploaded during execution. Comparisons and gates execute the authoritative Python CLI in a separate bounded sandbox using a pinned source commit; JavaScript does not invent replacement scores.
 
 The project is `solaris-gauntlet`, rooted at `web`, using Next.js and Node 22. Private Blob store `solaris-evidence` is in `iad1`. The owner key is stored only in ignored local `tmp/solaris-access-key.txt` and the server environment; its value must never be added to Git, screenshots, documentation or browser bundles. Sign-in uses a 12-hour secure HTTP-only cookie. See [docs/VERCEL.md](docs/VERCEL.md) for exact configuration, recovery procedures and unresolved work.
 
-**Cloud verification recorded so far:** the 82-test TypeScript suite and typecheck passed during implementation, including cloud storage, runner, ingestion, assessment and UI contract coverage. A real sandbox probe confirmed Python 3.13, pip and the checkout root `/vercel/sandbox`. This does not yet establish successful production sign-in, durable dry-run execution, review persistence or cross-run assessment; those checks remain part of deployment acceptance. No live desktop/model benchmark is verified.
+**Cloud verification:** 414 Python tests and 101 TypeScript tests pass, and GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. The remote `web/scripts/cloud-smoke.ts` acceptance check verified anonymous access rejection (401), owner sessions, two actual T01/T02 cloud dry runs, persisted manifests/trial evidence, a healthy saved audit, parent links, Python comparison with zero inconclusive transitions, a failing default live-required gate, a passing diagnostic policy, review save/reload/stale-edit rejection (409), preset save, manifest export and cross-origin rejection (403). Logout cleared the session and protected access returned 401 again. Readiness accepted storage/source configuration and reported only the missing desktop/model-provider credentials; its nonsecret output is in ignored `tmp/cloud-preflight.json`. The owner key was absent from eleven inspected deployed public JavaScript assets. Real Blob conditional writes were also verified. Source checkout and Python runtime were tested in real sandboxes.
+
+The accepted job IDs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49459f6a10ff76561db523f1987b332`. An earlier failed acceptance run remains visible rather than being deleted; it exposed compressed Blob responses with weak ETags. Identity-encoded reads and regression tests fixed that real storage issue. Both diagnostic sandboxes were confirmed `stopped` through the provider SDK after completion; this verifies those cloud workers ended, not cleanup of live Solari desktops.
+
+Browser verification on the published deployment covered the sign-in layout and invalid-key feedback. The complete authenticated cloud workflow was exercised through HTTP, not through a full browser interaction suite. Earlier mobile checks applied to the local workspace. Deployment rollback has not been exercised. Live provider credentials remain absent, and no live desktop/model benchmark is verified.
 
 Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. There is no automatic replay, resume, cancellation UI, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
 
@@ -390,7 +394,7 @@ The filter check needs Node; the package build command needs `uv`. Builds and un
 
 ## Remaining engineering work for the coding agent
 
-The inspection/review/comparison/gate loop and cloud execution adapters are implemented. Cloud mode adds owner authentication and persistent job identity, but still needs production end-to-end acceptance, live desktop validation, explicit cancellation and provider reconciliation. It is a single-owner product, not a multi-tenant service. Local tests do not establish live provider behavior.
+The inspection/review/comparison/gate loop and cloud execution adapters are implemented. Cloud mode adds owner authentication and persistent job identity, with production HTTP acceptance complete; remaining work includes complete authenticated browser interaction coverage, live desktop validation, explicit cancellation and provider reconciliation. It is a single-owner product, not a multi-tenant service. Local tests do not establish live provider behavior.
 
 | Priority | Work | Done when |
 |---|---|---|
@@ -400,7 +404,7 @@ The inspection/review/comparison/gate loop and cloud execution adapters are impl
 | 4 | Extend durable cloud jobs with cancellation and provider reconciliation | Browser closure preserves execution; explicit cancellation retains partial evidence and reconciles desktop cleanup. Continuation must validate provenance and remain distinct from a new attempt |
 | 5 | Confirm a supported snapshot/fork path and pin the prepared environment | Independent forks reproduce fixtures and demonstrably reduce setup work |
 | 6 | Validate reviewer workflow and extend export/analysis | Review real failures, preserve metadata backups, and make reviewed comparisons useful without rewriting verifier outcomes |
-| 7 | Complete hosted-product acceptance and release operations | Sign-in, cloud diagnostics, persistence after refresh, review conflicts, comparison/gates, deployment rollback and recovery are verified on the canonical Vercel deployment |
+| 7 | Extend hosted-product browser coverage and release operations | Complete authenticated browser workflows, persistence across redeployment, deployment rollback and recovery are verified; the production HTTP execution/review/comparison loop already passes |
 
 The original snapshot flow is not implemented because the installed Solari SDK does not expose the spec's assumed `from_snapshot` create argument. That limitation must be resolved against a supported interface before adding snapshot reuse. Actual desktop costs are also not part of the token estimate. The project has no automatic run resumption, remote resource sweeper, current-price lookup, hard budget cap, or multi-user roles.
 

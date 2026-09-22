@@ -2,7 +2,7 @@
 
 Updated September 22, 2026.
 
-The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The intended production address is [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app). Deployment and production acceptance are in progress; this document describes the implemented deployment and the checks required before calling it verified.
+The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The deployed production address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612` on September 22, 2026. This document records the deployed system, verification scope and remaining operational work.
 
 The previous hosted preview is not the production backend. This application runs the Python harness, stores real evidence, and returns actual verifier decisions. A dry run intentionally uses a static agent and produces expected task failures. No live Solari/model benchmark has been verified.
 
@@ -123,14 +123,29 @@ Back up the complete private store through an authorized storage operation, incl
 
 ## Acceptance and remaining work
 
-At this update, unit tests/typechecking and a real Python sandbox checkout probe have passed. Production verification is still in progress. Before calling the hosted loop verified:
+The current suite passes **414 Python tests and 101 TypeScript tests**. GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. The real production HTTP acceptance script verified:
 
-- Confirm unauthenticated API access is rejected and owner sign-in/logout work at the canonical URL.
-- Launch a real cloud dry run; close/reopen the page; confirm durable job completion, original manifest, trial files, screenshots and saved audit.
-- Save/reload review notes and configurations; verify stale-save rejection and attempt history.
-- Run compatible comparisons and an intentionally failing gate through real assessment workers.
-- Confirm server configuration exposes no provider, Blob, callback or owner secrets in public responses or bundles.
-- Review storage failure, expired-job and deployment rollback behavior without rewriting prior evidence.
+- Anonymous access rejected with 401, owner sign-in and authenticated session retrieval; logout cleared the session and protected access returned 401 again.
+- Two actual cloud dry T01/T02 jobs completing with persisted manifests/trial evidence, a healthy saved audit and a parent/child attempt link.
+- Python comparison with zero inconclusive transitions; the default live-required gate failing and an explicit diagnostic gate passing.
+- Review save/reload and stale revision rejection with 409, preset save and manifest export.
+- Cross-origin requests rejected with 403; public job responses exclude callback credentials. The owner access key was absent from all eleven inspected deployed public JavaScript assets.
+- Production readiness accepted storage/source configuration and reported only missing desktop/model-provider credentials. Its nonsecret output is retained locally in ignored `tmp/cloud-preflight.json`.
+
+Accepted production jobs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49459f6a10ff76561db523f1987b332`. An earlier failed run is retained honestly: it exposed weak ETags on compressed Blob responses. The adapter now requests identity encoding, regression tests cover it, and real Blob conditional writes were verified. Both diagnostic sandboxes were confirmed `stopped` through the provider SDK after completion; this verifies those cloud workers ended, not cleanup of live Solari desktops.
+
+Published browser checks covered the sign-in layout and invalid-key feedback. The authenticated end-to-end cloud flow above was verified through HTTP. A complete authenticated browser interaction suite, mobile cloud QA and deployment rollback remain separate follow-up checks. Previous mobile QA applied to the local app. No live desktop/model evaluation has been verified.
+
+### Repeat the remote acceptance check
+
+Set `GAUNTLET_ADMIN_KEY` privately in the terminal environment; do not paste its value into the command, documentation or shell history. Then run from the repository root:
+
+```sh
+cd web
+GAUNTLET_PUBLIC_ORIGIN=https://solaris-gauntlet.vercel.app npx tsx scripts/cloud-smoke.ts
+```
+
+This is a manual remote acceptance operation, not a read-only health check. It creates two actual diagnostic workers and durable review/preset records, and runs real assessment workers. It uses no model/desktop credentials but can incur Vercel usage. If it fails after launch, inspect the printed job ID before repeating it; do not delete failed evidence to make the acceptance history look clean.
 
 The owner still needs to configure Solari and one provider key for live evaluation, choose an available model/template and accept the intended paid scope. The first recommended scope is T01/T02, one trial each, concurrency one; T08/T11 follow after basic provisioning is reviewed. Live keys are currently absent, so live execution and benchmark reliability must remain described as unverified.
 

@@ -8,9 +8,11 @@ The current source iteration adds review notes, playback, saved setups, linked d
 
 ## Hosted product and public source
 
-The public source repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The Vercel deployment target is [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app); deployment and end-to-end cloud verification are in progress. This deployment uses the actual Python evaluation harness, private persistent evidence storage, and isolated execution workers. It does not substitute prerecorded demo results for execution.
+The public source repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The product is deployed at **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612`: owner sessions, two real cloud diagnostic jobs, persisted evidence, reviews/presets, linked attempts, Python comparisons and gates. This deployment uses the actual Python evaluation harness, private persistent evidence storage, and isolated execution workers. It does not substitute prerecorded demo results for execution.
 
 Cloud mode adds owner access-key sign-in, durable jobs, real dry/live evaluation launches, saved reviews and configurations, attempt history, comparisons and regression gates. Live execution requires separately configured Solari and selected-provider credentials and has not yet been verified. A cloud dry run exercises the harness without model calls or desktops, but Vercel worker/storage usage may still be billable.
+
+**Validation:** 414 Python tests and 101 TypeScript tests pass; GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. Published sign-in layout and invalid-key feedback were checked in the browser. Authenticated browser interactions across the full cloud workflow, rollback and live provider execution are not yet fully validated.
 
 See [the Vercel deployment and operations guide](docs/VERCEL.md) for setup, private storage, authentication, recovery, operating limits, and remaining validation. GitHub Pages cannot run the authenticated API, persistent storage adapters or Python workers; the repository is public while workspace data remains private.
 
