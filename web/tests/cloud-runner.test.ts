@@ -207,3 +207,51 @@ test("corrupt stored jobs fail closed without resetting their records", async ()
   );
   assert.equal(f.data.get(key)?.etag, row.etag);
 });
+
+test("cancellation is durable, idempotent and does not directly kill the sandbox", async () => {
+  const f = fixture();
+  const job = await f.runner.startCloudRun(setup, "dry-run", origin);
+  const first = await f.runner.cancelCloudJob(job.id);
+  const second = await f.runner.cancelCloudJob(job.id);
+  assert.equal(first.status, "cancelling");
+  assert.ok(first.cancelRequestedAt);
+  assert.equal(second.cancelRequestedAt, first.cancelRequestedAt);
+  assert.equal("callbackToken" in first, false);
+  assert.equal(f.stopped(), 0);
+  assert.equal(f.commands.length, 1);
+  f.advance();
+  assert.equal(
+    (await f.runner.getPublicCloudJob(job.id)).status,
+    "interrupted",
+  );
+  await assert.rejects(f.runner.cancelCloudJob(job.id), /expired/);
+});
+
+test("cancellation never rewrites terminal results or claims unsupported older workers stopped", async () => {
+  const f = fixture();
+  const job = await f.runner.startCloudRun(setup, "dry-run", origin);
+  await f.runner.updateCloudJob(job.id, (value) => ({
+    ...value,
+    controlVersion: undefined,
+  }));
+  await assert.rejects(f.runner.cancelCloudJob(job.id), /older worker/);
+  for (const status of ["complete", "failed", "cancelled"] as const) {
+    await f.runner.updateCloudJob(job.id, (value) => ({ ...value, status }));
+    assert.equal((await f.runner.cancelCloudJob(job.id)).status, status);
+  }
+});
+
+test("cancellation and completion racing through CAS preserve the terminal outcome", async () => {
+  const f = fixture();
+  const job = await f.runner.startCloudRun(setup, "dry-run", origin);
+  await Promise.all([
+    f.runner.cancelCloudJob(job.id),
+    f.runner.updateCloudJob(job.id, (value) => ({
+      ...value,
+      status: "complete",
+      exitCode: 3,
+    })),
+  ]);
+  assert.equal((await f.runner.getPublicCloudJob(job.id)).status, "complete");
+  assert.equal(f.commands.length, 1);
+});

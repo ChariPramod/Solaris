@@ -35,11 +35,15 @@ const completion = z
     complete: z.literal(true),
     exitCode: z.number().int().min(-255).max(255),
     error: z.string().max(1000).optional(),
+    cancelled: z.literal(true).optional(),
   })
   .strict();
-const schema = z.union([artifact, completion]);
+const control = z.object({ ...identity, control: z.literal(true) }).strict();
+const schema = z.union([artifact, completion, control]);
 const terminal = (job: CloudJob) =>
-  job.status === "complete" || job.status === "failed";
+  job.status === "complete" ||
+  job.status === "failed" ||
+  job.status === "cancelled";
 
 type Dependencies = {
   getJob?: typeof getCloudJob;
@@ -77,6 +81,9 @@ export function createIngestHandler(dependencies: Dependencies = {}) {
         throw new StoreError("Completed evidence cannot be changed", 409);
       if (Date.parse(job.expiresAt) <= now())
         throw new StoreError("The upload window has expired", 410);
+
+      if ("control" in input)
+        return json({ cancelRequested: Boolean(job.cancelRequestedAt) });
 
       if (!("complete" in input)) {
         const bytes = Buffer.from(input.contentBase64, "base64");
@@ -119,6 +126,11 @@ export function createIngestHandler(dependencies: Dependencies = {}) {
       }
 
       let error = input.error;
+      if (input.cancelled && !job.cancelRequestedAt)
+        throw new StoreError(
+          "Cancellation was not requested for this job",
+          409,
+        );
       let manifestAvailable = false;
       try {
         await readRun(job.id);
@@ -126,7 +138,9 @@ export function createIngestHandler(dependencies: Dependencies = {}) {
       } catch {
         error =
           error ||
-          "Worker ended without a readable manifest; inspect its saved evidence.";
+          (input.cancelled
+            ? "Cancellation acknowledged without a readable manifest. No task outcome or desktop cleanup is inferred."
+            : "Worker ended without a readable manifest; inspect its saved evidence.");
       }
       if (manifestAvailable && job.parentId) {
         try {
@@ -141,8 +155,11 @@ export function createIngestHandler(dependencies: Dependencies = {}) {
         if (terminal(current)) return current;
         return {
           ...current,
-          status:
-            error || ![0, 3].includes(input.exitCode) ? "failed" : "complete",
+          status: input.cancelled
+            ? "cancelled"
+            : error || ![0, 3].includes(input.exitCode)
+              ? "failed"
+              : "complete",
           exitCode: input.exitCode,
           ...(error ? { error } : { error: undefined }),
         };

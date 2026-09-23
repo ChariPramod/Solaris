@@ -13,6 +13,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -32,7 +33,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def post_json(url, payload, *, attempts=3, opener=None, sleep=time.sleep):
+def post_json(url, payload, *, attempts=3, opener=None, sleep=time.sleep, timeout=20):
     opener = opener or urllib.request.build_opener(NoRedirect())
     data = json.dumps(payload, separators=(",", ":")).encode()
     for attempt in range(attempts):
@@ -40,9 +41,23 @@ def post_json(url, payload, *, attempts=3, opener=None, sleep=time.sleep):
             url, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
         try:
-            with opener.open(request, timeout=20) as response:
+            with opener.open(request, timeout=timeout) as response:
                 if 200 <= response.status < 300:
-                    return
+                    if payload.get("control"):
+                        data = response.read(4097)
+                        if len(data) > 4096:
+                            raise RuntimeError("Invalid worker control response")
+                        try:
+                            result = json.loads(data)
+                        except (ValueError, UnicodeError):
+                            raise RuntimeError("Invalid worker control response") from None
+                        if (
+                            not isinstance(result, dict)
+                            or type(result.get("cancelRequested")) is not bool
+                        ):
+                            raise RuntimeError("Invalid worker control response")
+                        return result
+                    return None
                 raise RuntimeError(f"Upload rejected ({response.status})")
         except urllib.error.HTTPError as exc:
             if exc.code not in (408, 429) and exc.code < 500:
@@ -53,6 +68,80 @@ def post_json(url, payload, *, attempts=3, opener=None, sleep=time.sleep):
             if attempt == attempts - 1:
                 raise RuntimeError("Upload unavailable after bounded retries") from None
         sleep(min(2**attempt, 4))
+
+
+class ExecutionControl:
+    """Poll independently of artifact uploads; interrupt once and await bounded cleanup.
+
+    Acknowledged cancellation means execution stopped, not that a remote provider
+    confirmed deletion. The harness lifecycle journal remains authoritative for cleanup.
+    """
+
+    def __init__(self, config, *, check=None, interval=5, grace_seconds=150):
+        self.config = config
+        self.check = check or self._check
+        self.interval = interval
+        self.grace_seconds = grace_seconds
+        self.cancelled = False
+        self.error = None
+        self.done = threading.Event()
+
+    def _check(self):
+        if self.config.get("controlVersion") != 1:
+            return False
+        result = post_json(
+            self.config["callbackUrl"],
+            {"jobId": self.config["jobId"], "token": self.config["token"], "control": True},
+            attempts=1,
+            timeout=5,
+        )
+        return result["cancelRequested"]
+
+    def before_launch(self):
+        # An unavailable control channel must not start a paid evaluation.
+        self.cancelled = self.check()
+        return not self.cancelled
+
+    def watch(self, child, deadline):
+        failures = 0
+        while not self.done.is_set() and child.poll() is None:
+            requested = False
+            try:
+                requested = self.check()
+                failures = 0
+            except (RuntimeError, OSError):
+                failures += 1
+            if child.poll() is not None:
+                return  # Natural completion won while the control request was in flight.
+            self.cancelled = requested
+            if time.monotonic() >= deadline:
+                self.error = "Job time limit reached; inspect partial evidence and cleanup records"
+            elif failures >= 3:
+                self.error = (
+                    "Worker control is unavailable; execution stopped. "
+                    "Inspect partial evidence and cleanup records"
+                )
+            if self.cancelled or self.error:
+                self.interrupt(child)
+                return
+            self.done.wait(self.interval)
+
+    def interrupt(self, child):
+        try:
+            if child.poll() is not None:
+                return
+            child.send_signal(signal.SIGINT)
+            try:
+                child.wait(timeout=self.grace_seconds)
+            except subprocess.TimeoutExpired:
+                self.error = (
+                    "Worker required a forced stop. Remote desktop cleanup is unconfirmed; "
+                    "inspect lifecycle records"
+                )
+                child.kill()
+                child.wait(timeout=10)
+        except ProcessLookupError:
+            pass  # The process exited between polling and signaling.
 
 
 def artifact_bytes(root, relative):
@@ -122,6 +211,10 @@ class Uploader:
 
 
 def validate_config(config):
+    if "controlVersion" in config and (
+        type(config["controlVersion"]) is not int or config["controlVersion"] != 1
+    ):
+        raise ValueError("Unsupported worker control version")
     url = urllib.parse.urlsplit(config["callbackUrl"])
     if url.scheme != "https" or not url.hostname or url.username or url.password:
         raise ValueError("Callback must use HTTPS without credentials")
@@ -190,9 +283,15 @@ def execute(config, *, install=True, interval=5, wall_seconds=2400, output_root=
             env.pop(key, None)
     code, error = 2, None
     child = None
+    control = ExecutionControl(config)
+    monitor = None
+    deadline = time.monotonic() + wall_seconds
     try:
         if output.exists():
             raise RuntimeError("Job output already exists; refusing to replay execution")
+        if not control.before_launch():
+            code = 130
+            return code
         if install:
             package = ".[live]" if config["mode"] == "live" else "."
             # Installation logs can include private package URLs; do not upload them.
@@ -206,29 +305,27 @@ def execute(config, *, install=True, interval=5, wall_seconds=2400, output_root=
             )
             if result.returncode:
                 raise RuntimeError("Harness dependency installation failed")
+        if not control.before_launch():
+            code = 130
+            return code
         with open("/tmp/gauntlet-worker.log", "ab") as log:
             child = subprocess.Popen(run_args(config, output), env=env, stdout=log, stderr=log)
-            deadline = time.monotonic() + wall_seconds
+            monitor = threading.Thread(target=control.watch, args=(child, deadline), daemon=True)
+            monitor.start()
             while child.poll() is None:
                 uploader.flush()
-                if time.monotonic() >= deadline:
-                    child.send_signal(signal.SIGINT)
-                    try:
-                        child.wait(timeout=30)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        child.wait(timeout=10)
-                    error = "Job time limit reached; inspect partial evidence and cleanup records"
-                    break
                 time.sleep(interval)
             code = child.wait()
     except Exception as exc:
         # Do not expose provider messages, env, command arguments, or callback credentials.
         error = str(exc) if isinstance(exc, RuntimeError) else "Sandbox worker failed"
     finally:
+        control.done.set()
+        if monitor is not None:
+            monitor.join(timeout=control.grace_seconds + 10)
         if child is not None and child.poll() is None:
-            child.kill()
-            child.wait(timeout=10)
+            control.interrupt(child)
+        error = control.error or error
         if output.is_dir():
             try:
                 from gauntlet.harness.audit import audit_run
@@ -246,6 +343,7 @@ def execute(config, *, install=True, interval=5, wall_seconds=2400, output_root=
                     **uploader.identity,
                     "complete": True,
                     "exitCode": code,
+                    **({"cancelled": True} if control.cancelled else {}),
                     **({"error": error} if error else {}),
                 },
             )

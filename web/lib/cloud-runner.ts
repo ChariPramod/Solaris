@@ -11,7 +11,16 @@ export type CloudJob = {
   mode: "dry-run" | "live";
   setup: RunSetup;
   parentId?: string;
-  status: "starting" | "running" | "complete" | "failed" | "interrupted";
+  status:
+    | "starting"
+    | "running"
+    | "cancelling"
+    | "cancelled"
+    | "complete"
+    | "failed"
+    | "interrupted";
+  controlVersion?: 1;
+  cancelRequestedAt?: string;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
@@ -25,7 +34,7 @@ export type CloudJob = {
 };
 export type PublicCloudJob = Omit<CloudJob, "callbackToken">;
 export const CLOUD_JOB_ID = /^cloud_[a-f0-9]{32}$/;
-const ACTIVE = new Set(["starting", "running"]);
+const ACTIVE = new Set(["starting", "running", "cancelling"]);
 const MAX_WALL_MS = 45 * 60 * 1000;
 const jobSchema = z
   .object({
@@ -39,10 +48,14 @@ const jobSchema = z
     status: z.enum([
       "starting",
       "running",
+      "cancelling",
+      "cancelled",
       "complete",
       "failed",
       "interrupted",
     ]),
+    controlVersion: z.literal(1).optional(),
+    cancelRequestedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
@@ -147,6 +160,30 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
     return publicCloudJob(job);
   }
 
+  async function cancelCloudJob(id: string): Promise<PublicCloudJob> {
+    return publicCloudJob(
+      await updateCloudJob(id, (job) => {
+        if (["complete", "failed", "cancelled"].includes(job.status))
+          return job;
+        if (Date.parse(job.expiresAt) <= now())
+          throw new StoreError(
+            "The worker window has expired. Inspect saved cleanup records; stopping remote desktops is not confirmed.",
+            409,
+          );
+        if (job.controlVersion !== 1)
+          throw new StoreError(
+            "This older worker does not support cancellation. Inspect its evidence and wait for its execution limit.",
+            409,
+          );
+        return {
+          ...job,
+          status: "cancelling",
+          cancelRequestedAt: job.cancelRequestedAt ?? timestamp(),
+        };
+      }),
+    );
+  }
+
   async function startCloudRun(
     raw: RunSetup,
     mode: "dry-run" | "live",
@@ -203,6 +240,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
       setup,
       ...(parentId ? { parentId } : {}),
       status: "starting",
+      controlVersion: 1,
       createdAt,
       updatedAt: createdAt,
       expiresAt: new Date(now() + MAX_WALL_MS).toISOString(),
@@ -229,7 +267,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
         ...job,
         sandboxId: sandbox!.name,
         sessionId: sandbox!.currentSession().sessionId,
-        status: "running",
+        status: job.cancelRequestedAt ? "cancelling" : "running",
       }));
       workerEnv.GAUNTLET_CLOUD_CONFIG = JSON.stringify({
         jobId: id,
@@ -237,6 +275,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
         mode,
         setup,
         callbackUrl: `${url.origin}/api/cloud/ingest`,
+        controlVersion: 1,
       });
       launchAttempted = true;
       const command = await sandbox.runCommand({
@@ -273,8 +312,19 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
     }
   }
 
-  return { startCloudRun, getCloudJob, getPublicCloudJob, updateCloudJob };
+  return {
+    startCloudRun,
+    getCloudJob,
+    getPublicCloudJob,
+    updateCloudJob,
+    cancelCloudJob,
+  };
 }
 
-export const { startCloudRun, getCloudJob, getPublicCloudJob, updateCloudJob } =
-  createCloudRunner();
+export const {
+  startCloudRun,
+  getCloudJob,
+  getPublicCloudJob,
+  updateCloudJob,
+  cancelCloudJob,
+} = createCloudRunner();

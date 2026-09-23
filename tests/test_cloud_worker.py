@@ -201,3 +201,204 @@ def test_real_dry_worker_persists_manifest_audit_and_trial_before_completion(
     assert manifest["status"] == "complete"
     assert len(manifest["records"]) == 1
     assert json.loads(saved["audit.json"])["healthy"] is True
+
+
+def test_cancel_before_launch_skips_install_and_execution(config, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cloud_worker.ExecutionControl, "_check", lambda self: True)
+    monkeypatch.setattr(cloud_worker.subprocess, "run", lambda *a, **kw: pytest.fail("installed"))
+    monkeypatch.setattr(cloud_worker.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched"))
+    real_uploader = cloud_worker.Uploader
+    monkeypatch.setattr(
+        cloud_worker,
+        "Uploader",
+        lambda root, conf: real_uploader(
+            root, conf, post=lambda url, payload: calls.append(payload)
+        ),
+    )
+    assert cloud_worker.execute(config, output_root=tmp_path) == 130
+    assert calls[-1]["cancelled"] is True
+    assert calls[-1]["exitCode"] == 130
+
+
+def test_unavailable_control_prevents_launch(config, tmp_path, monkeypatch):
+    def offline(self):
+        raise RuntimeError("Upload unavailable after bounded retries")
+
+    calls = []
+    monkeypatch.setattr(cloud_worker.ExecutionControl, "_check", offline)
+    monkeypatch.setattr(cloud_worker.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched"))
+    real_uploader = cloud_worker.Uploader
+    monkeypatch.setattr(
+        cloud_worker,
+        "Uploader",
+        lambda root, conf: real_uploader(
+            root, conf, post=lambda url, payload: calls.append(payload)
+        ),
+    )
+    assert cloud_worker.execute(config, install=False, output_root=tmp_path) == 2
+    assert "cancelled" not in calls[-1]
+    assert "unavailable" in calls[-1]["error"]
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_control_interrupts_once_and_waits_for_cleanup(config, force):
+    import signal
+    import subprocess
+    import time
+
+    signals, kills, waits = [], [], []
+
+    class Process:
+        def poll(self):
+            return None
+
+        def send_signal(self, value):
+            signals.append(value)
+
+        def wait(self, timeout):
+            waits.append(timeout)
+            if force and len(waits) == 1:
+                raise subprocess.TimeoutExpired("harness", timeout)
+            return 130
+
+        def kill(self):
+            kills.append(True)
+
+    control = cloud_worker.ExecutionControl(config, check=lambda: True)
+    control.watch(Process(), time.monotonic() + 60)
+    assert signals == [signal.SIGINT]
+    assert waits[0] == 150
+    assert len(kills) == int(force)
+    assert control.cancelled is True
+    assert ("cleanup is unconfirmed" in control.error) if force else control.error is None
+
+
+def test_control_outage_stops_execution_after_three_failures(config):
+    import time
+
+    checks, signals = [], []
+
+    def offline():
+        checks.append(True)
+        raise RuntimeError("offline")
+
+    class Process:
+        def poll(self):
+            return None
+
+        def send_signal(self, value):
+            signals.append(value)
+
+        def wait(self, timeout):
+            return 130
+
+    control = cloud_worker.ExecutionControl(config, check=offline, interval=0)
+    control.watch(Process(), time.monotonic() + 60)
+    assert len(checks) == 3
+    assert len(signals) == 1
+    assert control.cancelled is False
+    assert "control is unavailable" in control.error
+
+
+@pytest.mark.parametrize("payload", [b"{}", b'{"cancelRequested":"yes"}', b"[]", b"x" * 4097])
+def test_worker_rejects_invalid_control_responses(config, payload):
+    from io import BytesIO
+
+    class Response(BytesIO):
+        status = 200
+
+    class Opener:
+        def open(self, request, timeout):
+            assert timeout == 5
+            return Response(payload)
+
+    with pytest.raises(RuntimeError, match="control response"):
+        post_json(config["callbackUrl"], {"control": True}, opener=Opener(), timeout=5)
+
+
+def test_real_child_cancellation_persists_final_evidence_during_slow_upload(
+    config, tmp_path, monkeypatch
+):
+    import sys
+    import time
+
+    output = tmp_path / config["jobId"]
+    ready = tmp_path / "ready"
+    script = """
+import json, signal, sys, time
+from pathlib import Path
+folder = Path(sys.argv[1]) / "T01/1"
+folder.mkdir(parents=True)
+def finish(*args):
+    (folder / "lifecycle.jsonl").write_text('{"event":"test_cleanup_finished"}\\n')
+    raise SystemExit(130)
+signal.signal(signal.SIGINT, finish)
+Path(sys.argv[2]).touch()
+while True:
+    time.sleep(0.01)
+"""
+    callbacks, children = [], []
+    real_popen = cloud_worker.subprocess.Popen
+    real_uploader = cloud_worker.Uploader
+    real_control = cloud_worker.ExecutionControl
+
+    def launch(*args, **kwargs):
+        child = real_popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    class SlowUploader(real_uploader):
+        def flush(self):
+            # Cancellation must remain responsive while the main upload loop blocks.
+            if children and children[0].poll() is None:
+                children[0].wait(timeout=5)
+            return super().flush()
+
+    monkeypatch.setattr(
+        cloud_worker, "run_args", lambda *_: [sys.executable, "-c", script, str(output), str(ready)]
+    )
+    monkeypatch.setattr(cloud_worker.subprocess, "Popen", launch)
+    monkeypatch.setattr(
+        cloud_worker,
+        "ExecutionControl",
+        lambda conf: real_control(conf, check=ready.exists, interval=0.01),
+    )
+    monkeypatch.setattr(
+        cloud_worker,
+        "Uploader",
+        lambda root, conf: SlowUploader(root, conf, post=lambda url, data: callbacks.append(data)),
+    )
+    started = time.monotonic()
+    assert cloud_worker.execute(config, install=False, interval=0.01, output_root=tmp_path) == 130
+    assert time.monotonic() - started < 5
+    assert len(children) == 1
+    assert children[0].poll() == 130
+    assert callbacks[-1]["cancelled"] is True
+    evidence = [row for row in callbacks[:-1] if row.get("path") == "T01/1/lifecycle.jsonl"]
+    assert len(evidence) == 1
+    assert b"test_cleanup_finished" in base64.b64decode(evidence[0]["contentBase64"])
+
+
+def test_natural_completion_wins_control_response_in_flight(config):
+    import time
+
+    class Process:
+        result = None
+
+        def poll(self):
+            return self.result
+
+        def send_signal(self, value):
+            pytest.fail("must not interrupt a completed process")
+
+    child = Process()
+
+    def late_cancel():
+        child.result = 3
+        return True
+
+    control = cloud_worker.ExecutionControl(config, check=late_cancel)
+    control.watch(child, time.monotonic() + 60)
+    assert control.cancelled is False
+    assert control.error is None

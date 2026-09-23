@@ -24,6 +24,30 @@ export function CloudJobs({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [stopping, setStopping] = useState<string[]>([]);
+  const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
+  async function stop(id: string) {
+    setStopping((ids) => [...ids, id]);
+    setStopErrors((errors) => ({ ...errors, [id]: "" }));
+    try {
+      const updated = await api<PublicCloudJob>(`/api/jobs/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      setJobs((previous) =>
+        previous.map((job) => (job.id === id ? updated : job)),
+      );
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      setStopErrors((errors) => ({
+        ...errors,
+        [id]: `${(error as Error).message} Refresh status before retrying; the stop request may have been saved.`,
+      }));
+    } finally {
+      setStopping((ids) => ids.filter((value) => value !== id));
+    }
+  }
   const signature = useRef("");
   useEffect(() => {
     const abort = new AbortController();
@@ -149,14 +173,48 @@ export function CloudJobs({
                   {dateLabel(job.createdAt)}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onOpen(job.id)}
-              >
-                Inspect saved evidence
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {job.controlVersion === 1 &&
+                  ["starting", "running", "interrupted"].includes(job.status) &&
+                  Date.parse(job.expiresAt) > Date.now() && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={stopping.includes(job.id)}
+                      onClick={() => void stop(job.id)}
+                    >
+                      {stopping.includes(job.id)
+                        ? "Requesting stop…"
+                        : "Stop evaluation"}
+                    </Button>
+                  )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpen(job.id)}
+                >
+                  Inspect saved evidence
+                </Button>
+              </div>
             </div>
+            {job.status === "cancelling" && (
+              <p role="status" className="mt-3 text-sm text-muted-foreground">
+                Stop requested. Waiting for the worker to finish cleanup and
+                save partial evidence. This can take several minutes.
+              </p>
+            )}
+            {job.status === "cancelled" && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                The worker acknowledged cancellation. Check saved lifecycle
+                records for remote desktop cleanup; cancellation alone does not
+                confirm deletion.
+              </p>
+            )}
+            {stopErrors[job.id] && (
+              <p role="alert" className="mt-3 text-sm text-destructive">
+                {stopErrors[job.id]}
+              </p>
+            )}
             {job.error && (
               <p className="mt-3 text-sm text-destructive">{job.error}</p>
             )}

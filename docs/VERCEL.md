@@ -150,3 +150,11 @@ This is a manual remote acceptance operation, not a read-only health check. It c
 The owner still needs to configure Solari and one provider key for live evaluation, choose an available model/template and accept the intended paid scope. The first recommended scope is T01/T02, one trial each, concurrency one; T08/T11 follow after basic provisioning is reviewed. Live keys are currently absent, so live execution and benchmark reliability must remain described as unverified.
 
 Remaining engineering includes cancellation with verified cleanup, provider inventory reconciliation, full cloud export/restore, archive pagination, retention controls, stronger multi-user identity/permissions if needed, prepared desktop snapshots through a supported provider API, and live-validated cost accounting. None is replaced by a demo workspace or fabricated results.
+
+## Cooperative cancellation
+
+New jobs offer **Stop evaluation** in Execution jobs. `POST /api/jobs/:id/cancel` requires the owner session and a same-origin empty JSON body. It stores the request without directly killing a potentially finalizing worker. The per-job authenticated worker control check shares `/api/cloud/ingest`; it exposes only a cancellation flag, never owner credentials or evidence.
+
+The worker checks before launch and independently during execution, interrupts the harness once and allows 150 seconds for finalization. The UI distinguishes requested cancellation from acknowledgment. Saved lifecycle evidence is required to establish external desktop cleanup. Forced termination, expired callbacks and missing manifests remain explicit. Source revision overrides must support worker control version 1; older existing jobs refuse cancellation. Dependency installation can delay acknowledgment by up to its four-minute bound.
+
+See [product readiness](PRODUCT_READINESS.md) for provider reconciliation, complete cloud backup/restore and the remaining operational work.

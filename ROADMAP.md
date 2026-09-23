@@ -9,7 +9,7 @@ Updated September 22, 2026. The presentation guide is [docs/PRESENTATION.md](doc
 | Area | Implemented | Remaining |
 |---|---|---|
 | Task suite | T01–T12 definitions, fixtures, verifiers, positive/negative tests | Validate action budgets and GUI usability on Solari |
-| Execution | Concurrency bound, step/time caps, cancellation-resistant finalization, durable allocation/cleanup journal; detached cloud workers with durable jobs and interrupted-state reconciliation | Live lifecycle testing; owned cancellation and provider reconciliation after process kill/lost create response |
+| Execution | Concurrency bound, step/time caps, cancellation-resistant finalization, durable allocation/cleanup journal; detached cloud workers with durable jobs and interrupted-state reconciliation | Live cancellation/lifecycle testing; provider reconciliation after process kill/lost create response |
 | Verification | Disk, JSON, clipboard, rename, ODS value; protected-file checks | Human trajectory review for required GUI steps |
 | Agent | Claude native computer use and OpenAI structured GUI actions; raw responses and usage preserved | Live validation of both protocols |
 | Reproducibility | Local apps, deterministic invoice archive, task/source hashes, pinned cloud worker checkout, saved setups and explicit independent attempt links | Prepared snapshots, stronger environment pinning and provenance-checked continuation |
@@ -18,7 +18,11 @@ Updated September 22, 2026. The presentation guide is [docs/PRESENTATION.md](doc
 | Distribution | CLI, public GitHub repository, authenticated Vercel product, private Blob storage; green Python/Node CI and production HTTP acceptance | Broader browser/physical-device coverage, release checks for future changes and rollback exercise |
 | Operations | Read-only preflight/audit; durable run/trial ownership; reconciled recovery exports with source hashes; owner sessions and bounded cloud workers | Provider inventory reconciliation, full storage backup/restore, pagination/retention and multi-user roles if required |
 
-## Current iteration: presentation readiness
+## Current iteration: product operations
+
+Implemented owner-requested cancellation for new cloud jobs, worker acknowledgment, independent control polling, bounded graceful finalization, partial-evidence persistence, explicit forced-stop warnings and conservative control-outage handling. Verified with 425 Python tests and 124 TypeScript tests, including a real subprocess cancellation during blocked uploads. Provider inventory reconciliation and full cloud export/restore remain unfinished. See [product readiness and acceptance criteria](docs/PRODUCT_READINESS.md).
+
+## Previous iteration: presentation readiness
 
 The product is available at [solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app), with public source at [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). Production HTTP acceptance against `c443612` verified two actual cloud diagnostic jobs, evidence persistence, reviews/presets, linked attempts, authoritative Python comparisons and gates. That HTTP checkpoint passed 414 Python tests and 101 TypeScript tests. The presentation release `f0ac407` and readiness correction `800f953` are now deployed, with 117 TypeScript tests passing and green GitHub CI including 414 Python tests.
 
@@ -120,7 +124,7 @@ Live validation is the largest unresolved risk. More unit tests cannot establish
 - A custom workflow builder with fixture/verifier authoring and validation. Current presets only configure shipped tasks.
 - Resilience experiment matrices for controlled perturbations, with explicit independent samples and failure denominators.
 - Cost/reliability frontier analysis grounded in validated pricing, provider usage and desktop fees. Current gates can enforce recorded API-estimate limits but cannot predict or cap spending.
-- Owned cancellation with verified desktop cleanup, provenance-checked execution resume and authenticated multi-user access. Durable cloud job records and owner authentication already exist; they do not provide these capabilities.
+- Provider-verified cleanup after forced interruption, provenance-checked execution resume and authenticated multi-user access. Durable cloud job records and owner authentication already exist; they do not provide these capabilities.
 - Complete cloud evidence/annotation export and restore, archive pagination and retention/garbage-collection controls.
 - Prepared-desktop snapshots or forks, contingent on a supported Solari interface and verified isolation.
 

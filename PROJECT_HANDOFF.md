@@ -2,6 +2,12 @@
 
 Updated September 22, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
 
+## Product operations iteration — September 22, 2026
+
+Implemented owner-controlled cancellation for new cloud jobs. Stop requests are durable and idempotent; workers acknowledge them after stopping, preserve partial artifacts, and leave cleanup uncertainty visible. Cancellation monitoring runs independently of evidence uploads. The worker checks control before evaluation starts and stops conservatively after repeated control-channel failures. Older workers and expired jobs fail explicitly instead of pretending cancellation succeeded.
+
+Local validation: 425 Python tests, 124 TypeScript tests, lint/format, typecheck and optimized build pass. A real subprocess test verifies final evidence survives cancellation while uploads block. Live Solari cancellation and provider resource reconciliation remain unverified. See [PRODUCT_READINESS.md](docs/PRODUCT_READINESS.md) for the prioritized engineering backlog, acceptance criteria and required owner inputs. No presentation work is needed to complete these engineering tasks.
+
 ## Current state
 
 The local product and cloud deployment implementation are built: twelve GUI tasks, two model adapters, deterministic state checks, repeated-trial orchestration, an offline evidence dashboard, API cost estimates, and interrupted-run audit/recovery. The remaining critical milestone is a reviewed run on actual Solari desktops. **There are no real benchmark scores yet.** Dry-run failures are expected and do not measure model performance.

@@ -161,3 +161,68 @@ test("body and decoded artifact sizes are bounded", async () => {
     413,
   );
 });
+
+test("worker control exposes only the authenticated job's stop flag", async () => {
+  const f = fixture();
+  assert.equal((await f.send({ control: true }, "e".repeat(64))).status, 403);
+  assert.deepEqual(await (await f.send({ control: true })).json(), {
+    cancelRequested: false,
+  });
+  f.setJob({
+    status: "cancelling",
+    cancelRequestedAt: new Date().toISOString(),
+  });
+  assert.deepEqual(await (await f.send({ control: true })).json(), {
+    cancelRequested: true,
+  });
+  assert.equal(f.artifacts.length, 0);
+  assert.equal(
+    (await f.send(file())).status,
+    200,
+    "partial evidence must still be accepted",
+  );
+});
+
+test("only acknowledged cancellation becomes cancelled and freezes evidence", async () => {
+  const f = fixture();
+  assert.equal(
+    (await f.send({ complete: true, exitCode: 130, cancelled: true })).status,
+    409,
+  );
+  f.setJob({
+    status: "cancelling",
+    cancelRequestedAt: new Date().toISOString(),
+  });
+  assert.equal(
+    (await f.send({ complete: true, exitCode: 130, cancelled: true })).status,
+    200,
+  );
+  assert.equal(f.job().status, "cancelled");
+  assert.deepEqual(f.stopped, ["sandbox-one"]);
+  assert.equal((await f.send(file())).status, 409);
+  assert.equal((await f.send({ complete: true, exitCode: 0 })).status, 200);
+  assert.equal(f.job().status, "cancelled");
+});
+
+test("natural completion may win a late cancellation and forced-stop errors remain visible", async () => {
+  const f = fixture();
+  f.setJob({
+    status: "cancelling",
+    cancelRequestedAt: new Date().toISOString(),
+  });
+  await f.send({ complete: true, exitCode: 3 });
+  assert.equal(f.job().status, "complete");
+  const forced = fixture({ missing: true });
+  forced.setJob({
+    status: "cancelling",
+    cancelRequestedAt: new Date().toISOString(),
+  });
+  await forced.send({
+    complete: true,
+    exitCode: -9,
+    cancelled: true,
+    error: "Cleanup unconfirmed",
+  });
+  assert.equal(forced.job().status, "cancelled");
+  assert.equal(forced.job().error, "Cleanup unconfirmed");
+});
