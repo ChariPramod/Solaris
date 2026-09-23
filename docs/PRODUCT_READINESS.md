@@ -19,6 +19,14 @@ New cloud jobs support **Stop evaluation** in Execution jobs. The API persists a
 
 Validation: 425 Python tests and 124 TypeScript tests pass, along with lint, formatting, typecheck and the production build. New cases cover authenticated cancellation, repeated requests, completion races, expiry, old workers, partial uploads, forced-stop uncertainty, control outages, malformed replies and a real subprocess finalizing while the uploader is blocked. These tests do not establish real Solari cleanup behavior.
 
+### Production acceptance
+
+Deployed functional revision `aedbf2b` to the canonical Vercel product. The authenticated cancellation script created `cloud_33325ab32e333d217fe7e0daaf841d5d`, persisted two idempotent stop requests, and observed worker acknowledgment with status `cancelled` and exit 130. Cancellation occurred before a readable manifest; the UI correctly displays that limitation. The owner browser showed the cancelled job and the new stop action on an active job.
+
+An ordinary two-task diagnostic launched through the browser as `cloud_2d2188c68fb755db8a09c67499386ee0` completed with both records saved and no job error. Exit 3 represents expected static-agent task failures. This checks the control-enabled normal execution path as well as cancellation. GitHub CI passed on Python 3.11/3.12/3.13 and Node 22. Live provider cleanup was not exercised.
+
+To repeat the cancellation check, privately supply `GAUNTLET_ADMIN_KEY` and `GAUNTLET_PUBLIC_ORIGIN`, then run `npx tsx scripts/cloud-cancel-smoke.ts` from `web`. This creates one real diagnostic worker and durable job record; it does not call a model or allocate a Solari desktop. Vercel usage may be billable.
+
 ## Priority 1: validate real desktop and model execution
 
 **Unfinished:** neither implemented provider adapter has been validated end-to-end against a real Solari desktop in this deployment. Diagnostic runs verify orchestration, not AI task completion.

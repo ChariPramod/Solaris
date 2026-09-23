@@ -6,6 +6,8 @@ Updated September 22, 2026. This is the practical handoff for the Solaris projec
 
 Implemented owner-controlled cancellation for new cloud jobs. Stop requests are durable and idempotent; workers acknowledge them after stopping, preserve partial artifacts, and leave cleanup uncertainty visible. Cancellation monitoring runs independently of evidence uploads. The worker checks control before evaluation starts and stops conservatively after repeated control-channel failures. Older workers and expired jobs fail explicitly instead of pretending cancellation succeeded.
 
+Production acceptance on `aedbf2b`: a real cloud job acknowledged an idempotent cancellation with exit 130; a separate browser-launched diagnostic completed and saved both planned records. The browser displayed the new stop action and acknowledged cancellation. Live desktop cleanup remains unverified.
+
 Local validation: 425 Python tests, 124 TypeScript tests, lint/format, typecheck and optimized build pass. A real subprocess test verifies final evidence survives cancellation while uploads block. Live Solari cancellation and provider resource reconciliation remain unverified. See [PRODUCT_READINESS.md](docs/PRODUCT_READINESS.md) for the prioritized engineering backlog, acceptance criteria and required owner inputs. No presentation work is needed to complete these engineering tasks.
 
 ## Current state

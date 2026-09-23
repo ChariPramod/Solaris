@@ -140,11 +140,11 @@ export function WorkspaceIntro({
                 : "No live evaluations are saved in this library. Diagnostic results demonstrate the workflow, not AI performance."}{" "}
             <a
               className="underline underline-offset-4"
-              href="https://github.com/ChariPramod/Solaris/blob/main/docs/PRESENTATION.md"
+              href="https://github.com/ChariPramod/Solaris/blob/main/docs/PRODUCT_READINESS.md"
               target="_blank"
               rel="noreferrer"
             >
-              Presentation walkthrough
+              Product status and limitations
             </a>
           </p>
         </div>
