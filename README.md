@@ -8,6 +8,10 @@ The current source iteration adds review notes, playback, saved setups, linked d
 
 For unfinished product capabilities, implementation status and concrete acceptance criteria, see [product readiness](docs/PRODUCT_READINESS.md).
 
+## Agency delivery workspace
+
+The workspace now includes client projects, workflow templates, evidence-based insights, complete per-run evidence bundles, scoped integration API keys, GitHub Actions automation, n8n/Zapier connection recipes, atomic evaluation capacity and launch idempotency. See [the agency release](docs/AGENCY_RELEASE.md), [integration guide](docs/INTEGRATIONS.md) and [evidence bundle format](docs/EVIDENCE_BUNDLES.md). Client projects organize one owner workspace; they do not provide multi-tenant isolation. Live provider validation remains required.
+
 ## Hosted product and public source
 
 The public source repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The product is deployed at **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612`: owner sessions, two real cloud diagnostic jobs, persisted evidence, reviews/presets, linked attempts, Python comparisons and gates. This deployment uses the actual Python evaluation harness, private persistent evidence storage, and isolated execution workers. It does not substitute prerecorded demo results for execution.

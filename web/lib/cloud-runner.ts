@@ -1,7 +1,8 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
 import { z } from "zod";
-import { readJSON, writeJSON } from "./cloud-storage";
+import { listKeys, readJSON, writeJSON } from "./cloud-storage";
+import { cloudJobLimit, createCloudAdmission } from "./cloud-admission";
 import { setupSchema } from "./harness";
 import { StoreError } from "./store";
 import type { RunSetup } from "./types";
@@ -31,8 +32,14 @@ export type CloudJob = {
   commandId?: string;
   exitCode?: number | null;
   error?: string;
+  requestFingerprint?: string;
+  allocationState?:
+    "pending" | "provisioning" | "allocated" | "launching" | "stopped";
 };
-export type PublicCloudJob = Omit<CloudJob, "callbackToken">;
+export type PublicCloudJob = Omit<
+  CloudJob,
+  "callbackToken" | "requestFingerprint"
+>;
 export const CLOUD_JOB_ID = /^cloud_[a-f0-9]{32}$/;
 const ACTIVE = new Set(["starting", "running", "cancelling"]);
 const MAX_WALL_MS = 45 * 60 * 1000;
@@ -66,6 +73,13 @@ const jobSchema = z
     commandId: z.string().min(1).max(200).optional(),
     exitCode: z.number().int().min(-255).max(255).nullable().optional(),
     error: z.string().max(2000).optional(),
+    requestFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    allocationState: z
+      .enum(["pending", "provisioning", "allocated", "launching", "stopped"])
+      .optional(),
   })
   .strict();
 
@@ -80,11 +94,19 @@ function validatedJob(value: unknown, id: string): CloudJob {
 }
 
 export function publicCloudJob(job: CloudJob): PublicCloudJob {
-  const { callbackToken: _token, ...result } = job;
+  const {
+    callbackToken: _token,
+    requestFingerprint: _fingerprint,
+    ...result
+  } = job;
   return result;
 }
 
-type Store = { readJSON: typeof readJSON; writeJSON: typeof writeJSON };
+type Store = {
+  readJSON: typeof readJSON;
+  writeJSON: typeof writeJSON;
+  listKeys: typeof listKeys;
+};
 type SandboxInstance = Pick<
   Sandbox,
   "name" | "currentSession" | "runCommand" | "stop"
@@ -96,16 +118,33 @@ type RunnerDependencies = {
   ) => Promise<SandboxInstance>;
   env?: Record<string, string | undefined>;
   now?: () => number;
+  workerStopped?: (job: CloudJob) => Promise<boolean>;
 };
 
 /** Durable state surrounds the single detached execution; storage retries never rerun a job. */
 export function createCloudRunner(dependencies: RunnerDependencies = {}) {
-  const store = dependencies.store ?? { readJSON, writeJSON };
+  const store = dependencies.store ?? { readJSON, writeJSON, listKeys };
   const createSandbox =
     dependencies.createSandbox ?? ((options) => Sandbox.create(options));
   const env = dependencies.env ?? process.env;
   const now = dependencies.now ?? Date.now;
   const timestamp = () => new Date(now()).toISOString();
+  const admission = createCloudAdmission({
+    store,
+    getJob: getCloudJob,
+    env,
+    now,
+    workerStopped:
+      dependencies.workerStopped ??
+      (async (job) => {
+        const sandbox = await Sandbox.get({
+          name: job.sandboxId ?? job.id.replaceAll("_", "-"),
+          resume: false,
+          signal: AbortSignal.timeout(10_000),
+        });
+        return ["stopped", "failed", "aborted"].includes(sandbox.status);
+      }),
+  });
 
   async function getCloudJob(id: string): Promise<CloudJob> {
     if (!CLOUD_JOB_ID.test(id))
@@ -189,6 +228,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
     mode: "dry-run" | "live",
     origin: string,
     parentId?: string,
+    idempotencyKey?: string,
   ) {
     const setup = setupSchema.parse(raw);
     if (!["dry-run", "live"].includes(mode))
@@ -208,6 +248,36 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
       );
     if (parentId && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(parentId))
       throw new StoreError("Invalid parent experiment", 400);
+    if (
+      idempotencyKey !== undefined &&
+      !/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey)
+    )
+      throw new StoreError(
+        "Idempotency-Key must contain 16 to 128 letters, numbers, dots, colons, underscores or hyphens.",
+        400,
+      );
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          setup: { ...setup, tasks: [...setup.tasks].sort() },
+          mode,
+          parentId: parentId ?? null,
+        }),
+      )
+      .digest("hex");
+    const id = idempotencyKey
+      ? `cloud_${createHash("sha256").update(`solaris-execution-v1:${idempotencyKey}`).digest("hex").slice(0, 32)}`
+      : `cloud_${randomBytes(16).toString("hex")}`;
+    const existing = await store.readJSON<CloudJob>(`jobs/${id}.json`);
+    if (existing) {
+      const job = validatedJob(existing.value, id);
+      if (job.requestFingerprint !== fingerprint)
+        throw new StoreError(
+          "This idempotency key belongs to a different evaluation plan. Use a new key for a new evaluation.",
+          409,
+        );
+      return publicCloudJob(job);
+    }
     const revision = env.GAUNTLET_SOURCE_REVISION || env.VERCEL_GIT_COMMIT_SHA;
     if (!revision || !/^[a-fA-F0-9]{40}$/.test(revision))
       throw new StoreError(
@@ -219,7 +289,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
       const providerKey =
         setup.provider === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
       for (const key of ["SOLARI_API_KEY", providerKey]) {
-        if (!env[key])
+        if (!env[key]?.trim())
           throw new StoreError(
             `Configure ${key} in the server environment before starting a live evaluation`,
             503,
@@ -232,7 +302,10 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
           400,
         );
     }
-    const id = `cloud_${randomBytes(16).toString("hex")}`;
+    cloudJobLimit(env);
+    await admission.initialize();
+    // Reserve before creating the job: a capacity rejection consumes no key and creates no failed job.
+    await admission.admit(id, fingerprint);
     const createdAt = timestamp();
     const initial: CloudJob = {
       id,
@@ -246,11 +319,47 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
       expiresAt: new Date(now() + MAX_WALL_MS).toISOString(),
       callbackToken: randomBytes(32).toString("hex"),
       sourceRevision: revision,
+      requestFingerprint: fingerprint,
+      allocationState: "pending",
     };
-    await store.writeJSON(`jobs/${id}.json`, initial, null);
+    try {
+      await store.writeJSON(`jobs/${id}.json`, initial, null);
+    } catch (error) {
+      let winner: CloudJob;
+      try {
+        winner = await getCloudJob(id);
+      } catch {
+        throw error;
+      }
+      if (winner.requestFingerprint !== fingerprint)
+        throw new StoreError(
+          "This idempotency key belongs to a different evaluation plan. Use a new key for a new evaluation.",
+          409,
+        );
+      if (winner.callbackToken === initial.callbackToken) {
+        // Our create may have committed even when its response was lost. Never continue a paid launch.
+        winner = await updateCloudJob(id, (job) =>
+          job.allocationState === "pending"
+            ? {
+                ...job,
+                status: "failed",
+                error:
+                  "Job creation was saved but could not be confirmed. No worker was launched. Use a new idempotency key for an intentional new attempt.",
+              }
+            : job,
+        );
+      }
+      return publicCloudJob(winner);
+    }
     let sandbox: SandboxInstance | undefined;
+    let provisionAttempted = false;
     let launchAttempted = false;
     try {
+      await updateCloudJob(id, (job) => ({
+        ...job,
+        allocationState: "provisioning",
+      }));
+      provisionAttempted = true;
       sandbox = await createSandbox({
         name: id.replaceAll("_", "-"),
         source: {
@@ -268,6 +377,7 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
         sandboxId: sandbox!.name,
         sessionId: sandbox!.currentSession().sessionId,
         status: job.cancelRequestedAt ? "cancelling" : "running",
+        allocationState: "allocated",
       }));
       workerEnv.GAUNTLET_CLOUD_CONFIG = JSON.stringify({
         jobId: id,
@@ -277,6 +387,10 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
         callbackUrl: `${url.origin}/api/cloud/ingest`,
         controlVersion: 1,
       });
+      await updateCloudJob(id, (job) => ({
+        ...job,
+        allocationState: "launching",
+      }));
       launchAttempted = true;
       const command = await sandbox.runCommand({
         cmd: "python3",
@@ -294,14 +408,26 @@ export function createCloudRunner(dependencies: RunnerDependencies = {}) {
       );
     } catch {
       // An ambiguous launch response must never trigger another paid execution.
-      if (sandbox && !launchAttempted)
-        await sandbox.stop().catch(() => undefined);
+      let stopped = false;
+      if (sandbox && !launchAttempted) {
+        try {
+          await sandbox.stop();
+          stopped = true;
+        } catch {
+          /* An uncertain stop cannot release workspace capacity. */
+        }
+      }
       return publicCloudJob(
         await updateCloudJob(id, (job) =>
           ACTIVE.has(job.status)
             ? {
                 ...job,
                 status: launchAttempted ? "interrupted" : "failed",
+                ...(stopped
+                  ? { allocationState: "stopped" as const }
+                  : !provisionAttempted
+                    ? { allocationState: "pending" as const }
+                    : {}),
                 error: launchAttempted
                   ? "Worker launch could not be confirmed. It may still finish; inspect this job before creating another attempt."
                   : "The execution sandbox could not be prepared. No evaluation was launched.",

@@ -1,6 +1,12 @@
 # Gauntlet project handoff
 
-Updated September 22, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
+Updated October 2, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
+
+## Agency product increment
+
+Added client projects, reusable workflow templates, honest analytics, streaming per-run evidence exports, a scoped automation API and GitHub Actions runner, n8n/Zapier HTTP connection recipes, atomic workspace evaluation admission and retry-safe launches. See [AGENCY_RELEASE.md](docs/AGENCY_RELEASE.md) for exact capabilities, limitations and the remaining owner setup, and [INTEGRATIONS.md](docs/INTEGRATIONS.md) for credential handling and API contracts. Projects are organizational metadata, not client authentication. No automated external client communication is enabled.
+
+Current local release checks: **426 Python tests and 173 TypeScript tests**, lint/format, typecheck, optimized build and both production HTTP integration scripts pass. The bundle HTTP check streamed more than 6 MiB and verified every extracted checksum. Current agency production acceptance is recorded in `docs/AGENCY_RELEASE.md`.
 
 ## Product operations iteration — September 22, 2026
 
@@ -36,7 +42,7 @@ The accepted job IDs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49
 
 The initial published browser check covered sign-in layout and invalid-key feedback; the presentation release extends that coverage as recorded below. The original broad cloud acceptance used HTTP. Deployment rollback has not been exercised. Live provider credentials remain absent, and no live desktop/model benchmark is verified.
 
-Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. There is no automatic replay, resume, cancellation UI, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
+Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. Cooperative cancellation and stable retry identities are implemented. There is no automatic execution replay, resume, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
 
 ## Presentation readiness
 

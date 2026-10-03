@@ -143,24 +143,7 @@ export async function readRun(id: string, root = RESULTS_ROOT): Promise<Run> {
     const raw = JSON.parse(
       (await safeFile(root, [id, "results.json"], 16 * 1024 * 1024)).toString(),
     );
-    const run = runSchema.parse(raw);
-    if (
-      new Set(run.task_ids).size !== run.task_ids.length ||
-      run.planned_trials !== run.task_ids.length * run.trials_per_task
-    )
-      throw new StoreError("Run plan is inconsistent.");
-    const slots = new Set<string>();
-    for (const r of run.records) {
-      const key = `${r.task_id}/${r.trial}`;
-      if (
-        slots.has(key) ||
-        !run.task_ids.includes(r.task_id) ||
-        r.trial > run.trials_per_task
-      )
-        throw new StoreError("Run contains conflicting trial identities.");
-      slots.add(key);
-    }
-    return { ...run, id };
+    return parseRun(id, raw);
   } catch (error) {
     if (error instanceof StoreError) throw error;
     throw new StoreError(
@@ -168,6 +151,28 @@ export async function readRun(id: string, root = RESULTS_ROOT): Promise<Run> {
       404,
     );
   }
+}
+/** Validate a captured manifest without re-reading a mutable storage pointer. */
+export function parseRun(id: string, raw: unknown): Run {
+  validId(id);
+  const run = runSchema.parse(raw);
+  if (
+    new Set(run.task_ids).size !== run.task_ids.length ||
+    run.planned_trials !== run.task_ids.length * run.trials_per_task
+  )
+    throw new StoreError("Run plan is inconsistent.");
+  const slots = new Set<string>();
+  for (const r of run.records) {
+    const key = `${r.task_id}/${r.trial}`;
+    if (
+      slots.has(key) ||
+      !run.task_ids.includes(r.task_id) ||
+      r.trial > run.trials_per_task
+    )
+      throw new StoreError("Run contains conflicting trial identities.");
+    slots.add(key);
+  }
+  return { ...run, id };
 }
 export async function listRuns(root = RESULTS_ROOT): Promise<Library> {
   const result: Library = {

@@ -13,7 +13,7 @@ import { summarizeRun } from "./domain";
 import type { Library, TrialDetail } from "./types";
 export const cloudEnabled = () => process.env.GAUNTLET_STORAGE === "vercel";
 const artifactPath =
-  /^(?:results\.json|audit\.json|T\d{2}\/[1-9]\d{0,4}\/(?:task\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|\d{3,6}\.jpg|final\.jpg))$/;
+  /^(?:results\.json|audit\.json|T\d{2}\/[1-9]\d{0,4}\/(?:task\.json|baseline\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|\d{3,6}\.jpg|final\.jpg))$/;
 const fileSchema = z
   .object({
     key: z.string(),

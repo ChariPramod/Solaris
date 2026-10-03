@@ -18,6 +18,9 @@ function fixture(
     launchError?: boolean;
     prepareError?: boolean;
     env?: Record<string, string | undefined>;
+    workerStopped?: boolean;
+    storageUnavailable?: boolean;
+    firstJobWriteError?: "before" | "after";
   } = {},
 ) {
   const data = new Map<string, { value: unknown; etag: string }>();
@@ -25,24 +28,44 @@ function fixture(
   const provisions: unknown[] = [];
   let clock = 1_800_000_000_000;
   let stopped = 0;
+  let failedJobWrite = false;
   const runner = createCloudRunner({
     now: () => clock,
     env: { GAUNTLET_SOURCE_REVISION: "a".repeat(40), ...overrides.env },
     store: {
       async readJSON<T>(key: string) {
+        if (overrides.storageUnavailable)
+          throw new StoreError("Storage unavailable", 503);
         const row = data.get(key);
         return row
           ? { value: structuredClone(row.value) as T, etag: row.etag }
           : null;
       },
       async writeJSON(key: string, value: unknown, expected: string | null) {
+        const fail =
+          !failedJobWrite &&
+          overrides.firstJobWriteError &&
+          key.startsWith("jobs/") &&
+          expected === null;
+        if (fail) failedJobWrite = true;
+        if (fail && overrides.firstJobWriteError === "before")
+          throw new StoreError("Unavailable", 503);
         if ((data.get(key)?.etag ?? null) !== expected)
           throw new StoreError("Conflict", 409);
         const etag = String(Number(expected ?? "0") + 1);
         data.set(key, { value: structuredClone(value), etag });
+        if (fail && overrides.firstJobWriteError === "after")
+          throw new StoreError("Unavailable", 503);
         return { etag };
       },
+      async listKeys(prefix: string) {
+        return {
+          keys: [...data.keys()].filter((key) => key.startsWith(prefix)),
+          truncated: false,
+        };
+      },
     },
+    workerStopped: async () => overrides.workerStopped ?? false,
     createSandbox: async (options) => {
       provisions.push(options);
       if (overrides.prepareError)
@@ -51,7 +74,11 @@ function fixture(
         name: "sandbox-one",
         currentSession: () => ({ sessionId: "session-one" }),
         runCommand: async (command: unknown) => {
-          const job = [...data.values()][0].value as CloudJob;
+          const config = JSON.parse(
+            (command as { env: Record<string, string> }).env
+              .GAUNTLET_CLOUD_CONFIG,
+          );
+          const job = data.get(`jobs/${config.jobId}.json`)!.value as CloudJob;
           assert.equal(
             job.sandboxId,
             "sandbox-one",
@@ -161,7 +188,10 @@ test("preparation errors remain durable and do not launch evaluation", async () 
   const job = await f.runner.startCloudRun(setup, "dry-run", origin);
   assert.equal(job.status, "failed");
   assert.equal(f.commands.length, 0);
-  assert.equal(f.data.size, 1);
+  assert.equal(
+    [...f.data.keys()].filter((key) => key.startsWith("jobs/")).length,
+    1,
+  );
   assert.doesNotMatch(job.error!, /secret/);
 });
 
@@ -254,4 +284,273 @@ test("cancellation and completion racing through CAS preserve the terminal outco
   ]);
   assert.equal((await f.runner.getPublicCloudJob(job.id)).status, "complete");
   assert.equal(f.commands.length, 1);
+});
+
+test("concurrent identical idempotency keys create and execute exactly one durable job", async () => {
+  const f = fixture();
+  const outcomes = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      f.runner.startCloudRun(
+        setup,
+        "dry-run",
+        origin,
+        undefined,
+        "launch-request-one",
+      ),
+    ),
+  );
+  assert.equal(new Set(outcomes.map((job) => job.id)).size, 1);
+  assert.equal(f.provisions.length, 1);
+  assert.equal(f.commands.length, 1);
+  assert.equal("requestFingerprint" in outcomes[0], false);
+  const retried = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(retried.commandId, "command-one");
+  assert.equal(f.commands.length, 1);
+});
+
+test("idempotency binds the canonical plan and rejects altered mode, scope, model or parent", async () => {
+  const f = fixture();
+  const original = { ...setup, tasks: ["T01", "T02"] };
+  const job = await f.runner.startCloudRun(
+    original,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  const reordered = await f.runner.startCloudRun(
+    { ...original, tasks: ["T02", "T01"] },
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(reordered.id, job.id);
+  for (const operation of [
+    () =>
+      f.runner.startCloudRun(
+        original,
+        "live",
+        origin,
+        undefined,
+        "launch-request-one",
+      ),
+    () =>
+      f.runner.startCloudRun(
+        setup,
+        "dry-run",
+        origin,
+        undefined,
+        "launch-request-one",
+      ),
+    () =>
+      f.runner.startCloudRun(
+        { ...original, modelId: "other" },
+        "dry-run",
+        origin,
+        undefined,
+        "launch-request-one",
+      ),
+    () =>
+      f.runner.startCloudRun(
+        original,
+        "dry-run",
+        origin,
+        "parent",
+        "launch-request-one",
+      ),
+  ])
+    await assert.rejects(
+      operation(),
+      (error: unknown) => error instanceof StoreError && error.status === 409,
+    );
+  assert.equal(f.commands.length, 1);
+});
+
+test("concurrent independent requests never exceed workspace capacity; 429 creates no job and consumes no key", async () => {
+  const f = fixture();
+  const requests = Array.from({ length: 6 }, (_, i) => `launch-request-${i}`);
+  const results = await Promise.allSettled(
+    requests.map((key) =>
+      f.runner.startCloudRun(setup, "dry-run", origin, undefined, key),
+    ),
+  );
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    2,
+  );
+  assert.equal(f.provisions.length, 2);
+  assert.equal(
+    [...f.data.keys()].filter((key) => key.startsWith("jobs/")).length,
+    2,
+  );
+  for (const result of results)
+    if (result.status === "rejected") assert.equal(result.reason.status, 429);
+  const finished = results.find(
+    (result) => result.status === "fulfilled",
+  )! as PromiseFulfilledResult<{ id: string }>;
+  await f.runner.updateCloudJob(finished.value.id, (job) => ({
+    ...job,
+    status: "complete",
+    exitCode: 3,
+  }));
+  const rejectedIndex = results.findIndex(
+    (result) => result.status === "rejected",
+  );
+  const admitted = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    requests[rejectedIndex],
+  );
+  assert.equal(admitted.status, "running");
+  assert.equal(f.provisions.length, 3);
+});
+
+test("ambiguous launch retries return the saved job and expiry cannot silently release its capacity", async () => {
+  const f = fixture({
+    launchError: true,
+    env: { GAUNTLET_MAX_ACTIVE_JOBS: "1" },
+  });
+  const job = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  const retry = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(retry.id, job.id);
+  assert.equal(retry.status, "interrupted");
+  f.advance();
+  await assert.rejects(
+    f.runner.startCloudRun(
+      setup,
+      "dry-run",
+      origin,
+      undefined,
+      "launch-request-two",
+    ),
+    (error: unknown) => error instanceof StoreError && error.status === 429,
+  );
+  assert.equal(f.commands.length, 1);
+});
+
+test("provider-confirmed stopped allocations release capacity without replaying the old evaluation", async () => {
+  const f = fixture({
+    launchError: true,
+    workerStopped: true,
+    env: { GAUNTLET_MAX_ACTIVE_JOBS: "1" },
+  });
+  const old = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  const next = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-two",
+  );
+  assert.notEqual(next.id, old.id);
+  assert.equal(f.commands.length, 2);
+  const retried = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(retried.id, old.id);
+  assert.equal(f.commands.length, 2);
+});
+
+test("missing storage and invalid workspace limits block provisioning", async () => {
+  for (const f of [
+    fixture({ storageUnavailable: true }),
+    fixture({ env: { GAUNTLET_MAX_ACTIVE_JOBS: "99" } }),
+  ]) {
+    await assert.rejects(
+      f.runner.startCloudRun(setup, "dry-run", origin),
+      (error: unknown) => error instanceof StoreError && error.status === 503,
+    );
+    assert.equal(f.provisions.length, 0);
+  }
+});
+
+test("a failed job write can resume its same-key reservation only when no durable job exists", async () => {
+  const f = fixture({
+    firstJobWriteError: "before",
+    env: { GAUNTLET_MAX_ACTIVE_JOBS: "1" },
+  });
+  await assert.rejects(
+    f.runner.startCloudRun(
+      setup,
+      "dry-run",
+      origin,
+      undefined,
+      "launch-request-one",
+    ),
+  );
+  assert.equal(f.provisions.length, 0);
+  const retry = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(retry.status, "running");
+  assert.equal(f.provisions.length, 1);
+});
+
+test("a lost successful job-creation response records definite no-launch and never replays", async () => {
+  const f = fixture({
+    firstJobWriteError: "after",
+    env: { GAUNTLET_MAX_ACTIVE_JOBS: "1" },
+  });
+  const saved = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(saved.status, "failed");
+  assert.match(saved.error!, /No worker was launched/);
+  const retry = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-one",
+  );
+  assert.equal(retry.id, saved.id);
+  assert.equal(f.provisions.length, 0);
+  const intentional = await f.runner.startCloudRun(
+    setup,
+    "dry-run",
+    origin,
+    undefined,
+    "launch-request-two",
+  );
+  assert.equal(intentional.status, "running");
+  assert.equal(f.provisions.length, 1);
 });

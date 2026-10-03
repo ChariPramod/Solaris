@@ -41,15 +41,15 @@ To repeat the cancellation check, privately supply `GAUNTLET_ADMIN_KEY` and `GAU
 
 **Engineering acceptance:** persist allocation ownership before use; reconcile provider inventory against durable ownership; expose outstanding resources and last reconciliation results; support explicit idempotent cleanup only for verified owned resources; test lost create responses, negative deletion acknowledgments, provider outages and process kills. Never report deletion merely because a worker disappeared.
 
-## Priority 3: complete evidence export and restore
+## Priority 3: complete workspace backup and restore
 
-**Unfinished:** the current download exports a manifest, not a portable cloud backup. Full artifacts, review histories, presets, attempt links and relevant job provenance need a consistent export. Local recovery does not replace a cloud backup.
+**Delivered:** per-run streamed evidence bundles now include indexed artifacts, scoped review history, attempt context, provenance, checksums and a handoff summary. **Unfinished:** whole-workspace backup and validated restore, including presets, projects and all related runs. Local recovery and per-run bundles do not replace a complete workspace backup.
 
 **Engineering acceptance:** export all referenced evidence and annotation revisions with checksums and a versioned inventory; exclude credentials; detect concurrent changes and missing objects; validate an archive before publishing a restore; refuse overwrites by default; restore into an isolated destination and compare reviews, audits and gates with the original. Exercise corrupt archives, interrupted transfers, duplicate restores and storage outages. Preserve ownership identities without restarting jobs.
 
 ## Priority 4: operational limits and cost controls
 
-**Unfinished:** current per-job concurrency and time limits do not impose a workspace-wide spending limit. Provider cost reconciliation and complete archive pagination/retention are missing.
+**Delivered:** atomic workspace evaluation capacity and idempotent launches prevent duplicate requests and bound concurrent evaluations. **Unfinished:** hard spending controls, provider cost reconciliation and complete archive pagination/retention. Assessment workers remain outside the evaluation cap.
 
 **Engineering acceptance:** enforce an atomic global active-job limit; prevent duplicate submissions with idempotency keys; validate estimates against actual model usage and desktop fees; distinguish unknown charges; introduce explicit admission budgets before allocation. Paginate jobs/runs without silently omitting older entries. Add retention previews and protect objects referenced by retained runs or reviews before deletion.
 

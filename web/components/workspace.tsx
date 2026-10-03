@@ -1,10 +1,24 @@
 "use client";
+import { EvaluationInsights } from "./evaluation-insights";
+import { WorkflowTemplates } from "./workflow-templates";
+import { ClientProjects } from "./client-projects";
+import { IntegrationsPanel } from "./integrations-panel";
+import { RunExport } from "./run-export";
+import {
+  launchIdentity,
+  pendingLaunchKey,
+  finishLaunch,
+} from "@/lib/launch-request";
 import { WorkspaceIntro } from "./workspace-intro";
 import { CloudLiveLaunch } from "./cloud-live-launch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
   Activity,
+  BarChart3,
+  BriefcaseBusiness,
+  Cable,
+  Workflow,
   ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
@@ -157,11 +171,20 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [view, setView] = useState<"runs" | "tasks" | "readiness">("runs");
+  const [view, setView] = useState<
+    | "runs"
+    | "tasks"
+    | "readiness"
+    | "insights"
+    | "projects"
+    | "templates"
+    | "integrations"
+  >("runs");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [dialogVersion, setDialogVersion] = useState(0);
   const [rerunSource, setRerunSource] = useState<Run | null>(null);
+  const [setupPreset, setSetupPreset] = useState<RunSetup | null>(null);
   const [taskPreset, setTaskPreset] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [create, setCreate] = useState(false);
@@ -256,26 +279,42 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
             {(
               [
                 { id: "runs", label: "Evaluations", icon: Layers3 },
+                {
+                  id: "projects",
+                  label: "Client projects",
+                  icon: BriefcaseBusiness,
+                },
+                { id: "insights", label: "Insights", icon: BarChart3 },
+                {
+                  id: "templates",
+                  label: "Workflow templates",
+                  icon: Workflow,
+                },
                 { id: "tasks", label: "Task suite", icon: Beaker },
+                { id: "integrations", label: "Integrations", icon: Cable },
                 { id: "readiness", label: "Readiness", icon: ShieldCheck },
               ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                aria-label={item.label}
-                className={cn("nav-item", view === item.id && "active")}
-                onClick={() => {
-                  setView(item.id);
-                  setSelected(null);
-                }}
-              >
-                <item.icon size={18} />
-                {item.label}
-                {item.id === "runs" && (
-                  <span className="nav-count">{runs.length || "—"}</span>
-                )}
-              </button>
-            ))}
+            )
+              .filter((item) => cloud || item.id !== "projects")
+              .map((item) => (
+                <button
+                  key={item.id}
+                  aria-label={item.label}
+                  aria-current={view === item.id ? "page" : undefined}
+                  title={item.label}
+                  className={cn("nav-item", view === item.id && "active")}
+                  onClick={() => {
+                    setView(item.id);
+                    setSelected(null);
+                  }}
+                >
+                  <item.icon size={18} />
+                  {item.label}
+                  {item.id === "runs" && (
+                    <span className="nav-count">{runs.length || "—"}</span>
+                  )}
+                </button>
+              ))}
           </nav>
           <div className="sidebar-bottom">
             <div className="local-card">
@@ -301,11 +340,17 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
               <span>Workspace</span>
               <ChevronRight size={14} />
               <strong>
-                {view === "runs"
-                  ? "Evaluations"
-                  : view === "tasks"
-                    ? "Task suite"
-                    : "Readiness"}
+                {
+                  {
+                    runs: "Evaluations",
+                    tasks: "Task suite",
+                    readiness: "Readiness",
+                    projects: "Client projects",
+                    insights: "Insights",
+                    templates: "Workflow templates",
+                    integrations: "Integrations",
+                  }[view]
+                }
               </strong>
             </div>
             <div className="topbar-right">
@@ -329,18 +374,36 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                   <div>
                     <p className="eyebrow">COMPUTER-USE EVALUATIONS</p>
                     <h1>
-                      {view === "runs"
-                        ? "Every run. Every detail."
-                        : view === "tasks"
-                          ? "The proving ground."
-                          : "Ready before you run."}
+                      {
+                        {
+                          runs: "Every run. Every detail.",
+                          tasks: "The proving ground.",
+                          readiness: "Ready before you run.",
+                          projects: "Every client. Clear evidence.",
+                          insights: "Know what is ready to ship.",
+                          templates: "Start with the work you deliver.",
+                          integrations: "Connect your delivery pipeline.",
+                        }[view]
+                      }
                     </h1>
                     <p className="page-subtitle">
-                      {view === "runs"
-                        ? "From first action to verified outcome."
-                        : view === "tasks"
-                          ? "Twelve tasks. Real applications. State-verified outcomes."
-                          : "Check your environment before creating a desktop."}
+                      {
+                        {
+                          runs: "From first action to verified outcome.",
+                          tasks:
+                            "Twelve tasks. Real applications. State-verified outcomes.",
+                          readiness:
+                            "Check your environment before creating a desktop.",
+                          projects:
+                            "Organize evaluations and client handoffs in one workspace.",
+                          insights:
+                            "Coverage, outcomes and recorded costs from your saved evaluations.",
+                          templates:
+                            "Review a task bundle, choose your model and keep every outcome.",
+                          integrations:
+                            "Connect GitHub Actions, n8n, Zapier or your own tools.",
+                        }[view]
+                      }
                     </p>
                   </div>
                   <Button
@@ -348,6 +411,7 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                     onClick={() => {
                       setRerunSource(null);
                       setTaskPreset(null);
+                      setSetupPreset(null);
                       setDialogVersion((v) => v + 1);
                       setCreate(true);
                     }}
@@ -356,6 +420,46 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                     New evaluation
                   </Button>
                 </div>
+                {(view === "projects" || view === "insights") && (
+                  <div className="mb-5 space-y-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={refreshing}
+                      onClick={refresh}
+                    >
+                      <RefreshCw
+                        size={15}
+                        className={refreshing ? "animate-spin" : ""}
+                      />
+                      {refreshing ? "Refreshing evidence…" : "Refresh evidence"}
+                    </Button>
+                    {error && (
+                      <Notice tone="error">
+                        {error}{" "}
+                        {library && "Showing the last successful snapshot."}{" "}
+                        <button
+                          className="text-link"
+                          disabled={refreshing}
+                          onClick={refresh}
+                        >
+                          Retry loading evidence
+                        </button>
+                      </Notice>
+                    )}
+                    {!!library?.warnings.length && (
+                      <details className="warning-details">
+                        <summary>
+                          {library.warnings.length} evidence library warning
+                          {library.warnings.length === 1 ? "" : "s"}
+                        </summary>
+                        {library.warnings.map((warning) => (
+                          <p key={warning}>{warning}</p>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                )}
                 {view === "runs" && (
                   <>
                     {cloud && (
@@ -365,6 +469,7 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                         onCreate={() => {
                           setRerunSource(null);
                           setTaskPreset(null);
+                          setSetupPreset(null);
                           setDialogVersion((v) => v + 1);
                           setCreate(true);
                         }}
@@ -672,12 +777,35 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                     onSelect={(id) => {
                       setRerunSource(null);
                       setTaskPreset(id);
+                      setSetupPreset(null);
                       setDialogVersion((v) => v + 1);
                       setCreate(true);
                     }}
                   />
                 )}
                 {view === "readiness" && <ReadinessPanel cloud={cloud} />}
+                {view === "insights" && (
+                  <EvaluationInsights
+                    runs={runs}
+                    onOpen={setSelected}
+                    loading={!library && !error}
+                  />
+                )}
+                {view === "projects" && cloud && (
+                  <ClientProjects runs={runs} onOpen={setSelected} />
+                )}
+                {view === "templates" && (
+                  <WorkflowTemplates
+                    onSelect={(setup) => {
+                      setRerunSource(null);
+                      setTaskPreset(null);
+                      setSetupPreset(setup);
+                      setDialogVersion((v) => v + 1);
+                      setCreate(true);
+                    }}
+                  />
+                )}
+                {view === "integrations" && <IntegrationsPanel cloud={cloud} />}
               </motion.div>
             </AnimatePresence>
           </main>
@@ -700,6 +828,7 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
             setSelected(null);
             setRerunSource(run);
             setTaskPreset(null);
+            setSetupPreset(null);
             setDialogVersion((v) => v + 1);
             setCreate(true);
           }}
@@ -718,6 +847,7 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
           }}
           key={dialogVersion}
           preset={taskPreset}
+          initialSetup={setupPreset}
           source={rerunSource}
           open={create}
           onOpenChange={setCreate}
@@ -948,6 +1078,7 @@ function ReadinessPanel({ cloud = false }: { cloud?: boolean }) {
   );
 }
 function NewEvaluation({
+  initialSetup,
   cloud,
   onJobCreated,
   open,
@@ -956,6 +1087,7 @@ function NewEvaluation({
   preset,
   source,
 }: {
+  initialSetup: RunSetup | null;
   cloud: boolean;
   onJobCreated: (job: PublicCloudJob) => void;
   source: Run | null;
@@ -965,26 +1097,27 @@ function NewEvaluation({
   onCreated: (id: string, warning?: string) => void;
 }) {
   const [setup, setSetup] = useState<RunSetup>(
-    source
-      ? {
-          ...defaultSetup,
-          tasks: source.task_ids.filter((id) => TASK_IDS.includes(id)),
-          trials: Math.min(3, source.trials_per_task),
-          concurrency: Math.min(
-            2,
-            Math.max(1, Number(source.configuration.concurrency) || 1),
-          ),
-          maxInfraFailures: Math.min(
-            3,
-            Math.max(1, Number(source.configuration.max_infra_failures) || 1),
-          ),
-          provider:
-            source.configuration.adapter === "openai" ? "openai" : "claude",
-          modelId: source.mode === "live" ? source.model : "",
-        }
-      : preset
-        ? { ...defaultSetup, tasks: [preset] }
-        : defaultSetup,
+    initialSetup ??
+      (source
+        ? {
+            ...defaultSetup,
+            tasks: source.task_ids.filter((id) => TASK_IDS.includes(id)),
+            trials: Math.min(3, source.trials_per_task),
+            concurrency: Math.min(
+              2,
+              Math.max(1, Number(source.configuration.concurrency) || 1),
+            ),
+            maxInfraFailures: Math.min(
+              3,
+              Math.max(1, Number(source.configuration.max_infra_failures) || 1),
+            ),
+            provider:
+              source.configuration.adapter === "openai" ? "openai" : "claude",
+            modelId: source.mode === "live" ? source.model : "",
+          }
+        : preset
+          ? { ...defaultSetup, tasks: [preset] }
+          : defaultSetup),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -994,15 +1127,21 @@ function NewEvaluation({
     setBusy(true);
     setError("");
     try {
+      const identity = launchIdentity(setup, mode, source?.id);
+      const key = pendingLaunchKey(identity);
       const result = await api<PublicCloudJob>("/api/jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
         body: JSON.stringify({
           setup,
           mode,
           ...(source ? { parentId: source.id } : {}),
         }),
       });
+      // Receipt is authoritative even if browser storage becomes unavailable afterward.
+      try {
+        finishLaunch(identity, key);
+      } catch {}
       onJobCreated(result);
     } catch (e) {
       setError(
@@ -1354,6 +1493,7 @@ function RunInspector({
                 </a>
               </Button>
             </div>
+            <RunExport runId={run.id} />
             {run.mode === "dry-run" && (
               <Notice>
                 Dry-run diagnostics. Failed checks are expected and are not

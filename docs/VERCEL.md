@@ -1,8 +1,8 @@
 # Solaris on Vercel
 
-Updated September 22, 2026.
+Updated October 2, 2026.
 
-The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The deployed production address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. Production HTTP acceptance passed against source commit `c443612` on September 22, 2026. This document records the deployed system, verification scope and remaining operational work.
+The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The production address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. This document describes the current implementation and distinguishes local verification from historical production acceptance. The October 2 agency increment has passed local checks; its current production acceptance is still pending. The September 22 acceptance against source commit `c443612` remains recorded below and does not verify these new features.
 
 The previous hosted preview is not the production backend. This application runs the Python harness, stores real evidence, and returns actual verifier decisions. A dry run intentionally uses a static agent and produces expected task failures. No live Solari/model benchmark has been verified.
 
@@ -12,13 +12,13 @@ The previous hosted preview is not the production backend. This application runs
 |---|---|
 | Public source | `ChariPramod/Solaris`, with generated evidence, credentials and local deployment files excluded |
 | Vercel project | `solaris-gauntlet`, GitHub-linked, Next.js, root directory `web`, Node 22 |
-| Web/API | Next.js application with owner session authentication and canonical-origin checks |
+| Web/API | Next.js application with owner sessions, separately scoped machine tokens and canonical-origin checks |
 | Persistent storage | Private Vercel Blob store `solaris-evidence`, region `iad1` |
 | Execution | Detached Vercel Sandbox running Python 3.13, checking out a pinned source commit |
 | Assessment | Separate short-lived Python sandbox for compatible comparison and regression gates |
 | Local fallback | Existing loopback workspace, Python CLI, saved artifacts and offline reports |
 
-GitHub Pages is unsuitable for these server APIs and workers. Making the repository public does not make saved evidence public. The UI and API serve private Blob objects only after workspace authentication. Worker callbacks use a separate per-job credential and validate the assigned execution plan.
+GitHub Pages is unsuitable for these server APIs and workers. Making the repository public does not make saved evidence public. The workspace requires owner authentication; the machine API requires a scoped integration token. Worker callbacks use a separate per-job credential and validate the assigned execution plan. Client projects organize evidence within the owner workspace; they do not create separate tenants or client access boundaries.
 
 The sandbox Git checkout is `/vercel/sandbox`. This was confirmed with an actual sandbox probe; do not add a `Solaris` subdirectory to its working directory.
 
@@ -33,6 +33,7 @@ Configure the following as server-only Vercel environment variables for the prod
 | `GAUNTLET_ADMIN_KEY` | A private random owner access key, at least 32 characters |
 | `BLOB_READ_WRITE_TOKEN` | The token supplied when connecting the private `solaris-evidence` store |
 | `GAUNTLET_SOURCE_REVISION` | Optional explicit 40-character published Git commit SHA; otherwise `VERCEL_GIT_COMMIT_SHA` is used |
+| `GAUNTLET_MAX_ACTIVE_JOBS` | Optional workspace evaluation-job limit, integer `1`–`8`; defaults to `2` |
 | `SOLARI_API_KEY` | Required for live desktops only |
 | `ANTHROPIC_API_KEY` | Required for Claude live execution only |
 | `OPENAI_API_KEY` | Required for OpenAI live execution only; the setup must also select an explicit model ID |
@@ -64,8 +65,8 @@ The integration command exercises an isolated local production server. It does n
 ## Product workflow
 
 1. Open the canonical address and sign in with the owner access key. The server sets a signed 12-hour `Secure`, `HttpOnly`, `SameSite=Strict` cookie. Logging out clears the cookie; rotating the key invalidates sessions signed with the old key.
-2. Open **New evaluation**, choose T01/T02 with one repeat and concurrency one, and select **Dry run**. The cloud request creates a durable job before provisioning a worker. It starts the actual Python harness once.
-3. Watch **Execution jobs**. The page polls every ten seconds; closing the browser does not stop the worker. Job completion means execution finished, not that tasks passed. Refresh status before creating another job after a disconnected request.
+2. Open **New evaluation**, choose T01/T02 with one repeat and concurrency one, and select **Dry run**. Atomic admission reserves workspace capacity, then creates a durable job before provisioning a worker. The browser retains an idempotency key for retrying the same plan. A durable job receives at most one harness launch.
+3. Watch **Execution jobs**. The page polls every ten seconds; closing the browser does not stop the worker. Job completion means execution finished, not that tasks passed. **Stop evaluation** requests cooperative cancellation; wait for acknowledgment and inspect saved cleanup evidence. After a disconnected launch, retry with the original request identity or inspect the job before making an intentional new attempt.
 4. Open saved evidence as uploads arrive. Inspect the trial matrix, screenshots/actions, original verifier outcome and saved audit. Early or interrupted jobs can have missing evidence; absence remains visible.
 5. Save a review or preset, refresh the page, and confirm it persists. Human annotations remain separate from the original machine verdict. Revision conflicts must be resolved explicitly; a stale save does not silently overwrite newer work.
 6. Launch another independent run or linked attempt, then compare compatible evidence. Gates use the same Python logic as the CLI. Live-required policies correctly fail dry evidence; missing coverage, infrastructure/cleanup errors and unknown configured costs cannot become passing evidence.
@@ -73,19 +74,25 @@ The integration command exercises an isolated local production server. It does n
 
 Provider credentials are never returned to the browser. Dry workers omit all three provider keys; live workers receive only Solari plus the selected model-provider key. Diagnostic workers and comparison workers may still incur Vercel infrastructure usage. There is no hard spending cap.
 
+The agency increment adds client projects, workflow templates, evidence insights, portable evidence downloads and scoped automation access. See [agency capabilities and owner prerequisites](AGENCY_RELEASE.md), [GitHub Actions, n8n and Zapier integration setup](INTEGRATIONS.md), and [the evidence bundle format](EVIDENCE_BUNDLES.md). Integration recipes require configuration in the external account; their presence in the product does not mean an account has been connected.
+
+Machine requests use `/api/automation/v1` with a bearer token created through the owner-only **Integrations** panel. Tokens are shown once, hashed at rest, expiring and revocable. `read`, `execute`, `live:execute` and `assess` scopes separate access; a live launch requires both execution scopes and configured provider credentials. Owner cookies do not authenticate machine routes. A machine job POST requires an `Idempotency-Key`, namespaced to its integration credential. Reuse the same key and plan for retries; changed plans return 409. Rotating the credential changes that namespace, so inspect outstanding jobs before retrying with a replacement key.
+
 ## Persistence and limits
 
-Private storage separates execution records, artifact indexes/content, reviews, presets and attempt links. Artifact contents are hash-checked on reads. Metadata uses conditional writes against the stored revision, so conflicting edits fail instead of overwriting newer revisions. A broken object or index is reported; it is not silently reset.
+Private storage separates execution records, artifact indexes/content, reviews, presets, attempt links, client projects, integration-token metadata and the admission ledger. Artifact contents are hash-checked on reads. Metadata uses conditional writes against the stored revision, so conflicting edits fail instead of overwriting newer revisions. A broken object or index is reported; it is not silently reset.
 
 - Run/job listings are bounded to 200 entries. The jobs panel shows up to twelve returned jobs. This is a bounded first-page implementation, not full archive pagination.
 - Each uploaded artifact is limited to 2 MiB. Screenshots, action logs or manifests over that limit can leave incomplete cloud evidence; the worker records a persistence failure instead of claiming complete storage.
-- Cloud uploads include `results.json`, the saved audit, task/result files, lifecycle journals, action logs and accepted screenshots. The cloud manifest download is only `results.json`; it is not a complete evidence/metadata backup. Generated local HTML reports and all other local files are not automatically uploaded.
+- Cloud uploads include `results.json`, the saved audit, task/result files, per-trial `baseline.json` snapshots, lifecycle journals, action logs and accepted screenshots. Older cloud runs may lack baseline snapshots because previous workers did not upload them; export cannot reconstruct missing originals. Generated local HTML reports and arbitrary local files are not automatically uploaded.
+- **Download evidence bundle** produces a streamed `.tar.gz` containing all captured indexed artifacts, checksums, run-specific review histories, direct attempt context, available nonsecret provenance and a facts-only handoff summary. The same endpoint supports local runs. It permits up to 5,000 evidence files and 64 MiB of evidence/annotation bytes, with a 16 MiB per-file limit; ingestion limits still apply. Active jobs, corrupt or missing indexed files, concurrent edits and oversized exports fail explicitly. The separate manifest download remains only `results.json`. Neither download is whole-workspace backup or restore; see [bundle limitations](EVIDENCE_BUNDLES.md).
+- A single Blob conditional-write admission ledger enforces the evaluation-job cap across server instances. Initial migration examines at most 1,000 existing jobs and fails closed on a truncated or invalid listing. Subsequent admission reads the ledger's reserved job identities directly; a truncated library listing cannot free a slot. A 429 capacity rejection creates no job and consumes no key, so retry the same key once capacity is available. Completed/cancelled or authoritatively failed execution releases capacity. Ambiguous allocations retain it until the provider confirms the worker stopped; missing records and provider errors do not count as confirmation. Assessment workers and remote Solari desktop inventory are not included in this cap.
 - Each execution sandbox has a 45-minute maximum lifetime. The worker uses a 40-minute harness execution deadline, sends SIGINT, then uses a bounded forced-stop fallback. Dependency installation and final persistence also need time within the sandbox lifetime.
 - Comparison/gate workers have a 210-second sandbox lifetime, a 180-second request signal, bounded install/CLI timeouts, 128 MiB combined evidence and 2 MiB output limits. The UI allows up to 240 seconds for assessment and job-start requests.
 - Reviews/presets retain bounded revision histories. Local mode retains its filesystem locking; cloud mode uses storage revisions. Neither mode edits the original result when saving a human assessment.
 - The owner session is a single-workspace authentication mechanism. There are no separate user accounts, role permissions, workspace tenants or per-review author authentication.
 
-Jobs are not automatically replayed or resumed after an ambiguous response. The worker receives one harness invocation, while uploads may retry. Expired unfinished jobs become visibly interrupted. A new attempt is a new experiment with a new identity; it does not fill missing slots in an old run.
+Retrying a launch request with the same idempotency key returns its durable job rather than replaying execution. If storage failed before any job existed, the same key can safely finish creating that reserved job. A durable job is never automatically re-executed; an ambiguous launch may still finish and report back. The worker receives one harness invocation, while uploads may retry. Expired unfinished jobs become visibly interrupted, but expiry alone does not release uncertain capacity or establish remote desktop cleanup. A new attempt needs a new identity and does not fill missing slots in an old run.
 
 ## Recovery and operations
 
@@ -95,11 +102,13 @@ Use the canonical production address. Verify `GAUNTLET_PUBLIC_ORIGIN` exactly ma
 
 ### A launch request disconnected
 
-Check **Execution jobs** before pressing start again. A failed network response can occur after the worker started. Retain the job ID and inspect its state/evidence. An ambiguous job may still report completion later. Do not automatically retry a launch: it could duplicate paid execution.
+Retain the original idempotency key and job ID, when returned. Retry the same request with that key or check **Execution jobs**; a failed network response can occur after the worker started. The browser keeps pending launch identity through dialog closure and same-tab reload. Machine clients must persist their own key. Same-key retries do not start another execution; changing the key or integration credential can create a new experiment. A different plan under the same key returns 409 and requires an intentional new identity. An ambiguous job may still report completion later. If the request identity was lost, inspect job state/evidence before creating a replacement.
+
+For HTTP 429, no job was created and the key remains reusable after capacity clears. For unavailable or uncertain storage, preserve the key: a reservation may exist even if the job is not yet visible. Do not delete the admission ledger or manually free slots merely because the library is empty or truncated.
 
 ### A worker failed or stopped reporting
 
-Inspect the job error, saved manifest, lifecycle records and audit. Dependency or provisioning failures can occur before a manifest exists. Once the job's maximum lifetime expires it is reconciled to interrupted; that status is not proof of remote desktop cleanup. There is no cancellation button or remote inventory sweeper in this iteration.
+Inspect the job error, saved manifest, lifecycle records and audit. Dependency or provisioning failures can occur before a manifest exists. Supported workers offer cooperative cancellation through **Stop evaluation**, with bounded finalization and a forced-stop fallback; see [cooperative cancellation](#cooperative-cancellation). Once the job's maximum lifetime expires it is reconciled to interrupted; that status is not proof of remote desktop cleanup. Provider-side resource inventory and automatic orphan-desktop reconciliation remain unfinished.
 
 For live jobs, use recorded desktop identifiers to inspect the Solari account and confirm cleanup of resources belonging to this run. A lost allocation response may lack an ID and require provider-side investigation. Do not destroy unrelated desktops. Preserve evidence before starting a replacement attempt.
 
@@ -113,17 +122,25 @@ Keep the unsaved text, reload the current revision, inspect the newer data, and 
 
 ### Assessment is unavailable
 
-Keep browsing original evidence. Missing source revisions, worker setup failures, malformed output and timeouts return explicit errors and do not modify the run. Where a full local evidence copy is available, use `python -m gauntlet compare` or `python -m gauntlet gate`. A manifest-only download is insufficient for the complete validation these commands perform.
+Keep browsing original evidence. Missing source revisions, worker setup failures, malformed output and timeouts return explicit errors and do not modify the run. Export a terminal run's evidence bundle, verify its checksums, and use its `evidence/` directory with `python -m gauntlet compare` or `python -m gauntlet gate` where the required original evidence is present. Export preserves incomplete runs honestly and cannot supply missing artifacts. A manifest-only download is insufficient for the complete validation these commands perform.
 
 ### Deployment rollback and backups
 
 Retain the last known-good source SHA and Vercel deployment. Roll back the frontend/API and its explicit worker revision consistently. Existing saved run fingerprints must remain unchanged. Do not delete private storage to resolve a deployment failure.
 
-Back up the complete private store through an authorized storage operation, including artifact indexes, referenced content, jobs and workspace metadata. A manifest download alone is not a backup. There is not yet an in-product complete cloud export, restore wizard or retention/garbage-collection policy. In local mode, back up both `results/` and `.gauntlet-workspace/`.
+Back up the complete private store through an authorized storage operation, including artifact indexes, referenced content, jobs, admission state and workspace metadata. Per-run evidence bundles support inspection and handoff but exclude unrelated workspace records and credentials. They do not replace complete cloud backup or restore. There is not yet an in-product whole-workspace export, restore wizard or retention/garbage-collection policy. In local mode, back up both `results/` and `.gauntlet-workspace/`.
 
-## Acceptance and remaining work
+## Verification and production acceptance
 
-The current suite passes **414 Python tests and 117 TypeScript tests**. GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. The real production HTTP acceptance script verified:
+### October 2 agency increment — local checks passed; production acceptance pending
+
+The current suite passes **426 Python tests and 173 TypeScript tests**. Python lint/format checks also pass. Coverage includes concurrent launch admission, same-key retries, scope restrictions, credential hashing/revocation, client project conflicts, evidence archive extraction and independent checksum verification, partial/corrupt exports, and the CI client's real gate-result contract. These local checks do not establish current production acceptance, external n8n/Zapier account connectivity, live model performance or live desktop cleanup.
+
+After deployment, verify the owner browser workflow, project persistence, token creation/revocation and scoped machine requests, same-key launch reuse, capacity behavior, downloadable streamed bundles and the CI gate path against the actual production revision. Record that acceptance separately before calling this increment production-verified. See [the agency release checklist](AGENCY_RELEASE.md).
+
+### Historical acceptance — September 22, 2026
+
+The earlier suite passed **414 Python tests and 117 TypeScript tests**, with green GitHub CI on Python 3.11/3.12/3.13 and Node 22. Against source commit `c443612`, the production HTTP acceptance script verified:
 
 - Anonymous access rejected with 401, owner sign-in and authenticated session retrieval; logout cleared the session and protected access returned 401 again.
 - Two actual cloud dry T01/T02 jobs completing with persisted manifests/trial evidence, a healthy saved audit and a parent/child attempt link.
@@ -134,7 +151,7 @@ The current suite passes **414 Python tests and 117 TypeScript tests**. GitHub C
 
 Accepted production jobs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49459f6a10ff76561db523f1987b332`. An earlier failed run is retained honestly: it exposed weak ETags on compressed Blob responses. The adapter now requests identity encoding, regression tests cover it, and real Blob conditional writes were verified. Both diagnostic sandboxes were confirmed `stopped` through the provider SDK after completion; this verifies those cloud workers ended, not cleanup of live Solari desktops.
 
-Published browser checks now cover the public overview, sign-in, guided diagnostic launch, saved trial/review, comparison, expected gate rejection and live-setup blockers. The full acceptance flow above was also verified through HTTP. See [the presentation guide](PRESENTATION.md) for the recorded browser release checks. A complete authenticated browser interaction suite, mobile cloud QA and deployment rollback remain separate follow-up checks. Previous mobile QA applied to the local app. No live desktop/model evaluation has been verified.
+Subsequent recorded browser checks covered the public overview, sign-in, guided diagnostic launch, saved trial/review, comparison, expected gate rejection and live-setup blockers. See [the historical browser release notes](PRESENTATION.md). Those checks predate the current agency increment; they do not verify its new UI or APIs. A complete authenticated browser interaction suite, broad mobile cloud QA and exercised deployment rollback remain follow-up work. No live desktop/model evaluation has been verified.
 
 ### Repeat the remote acceptance check
 
@@ -149,7 +166,7 @@ This is a manual remote acceptance operation, not a read-only health check. It c
 
 The owner still needs to configure Solari and one provider key for live evaluation, choose an available model/template and accept the intended paid scope. The first recommended scope is T01/T02, one trial each, concurrency one; T08/T11 follow after basic provisioning is reviewed. Live keys are currently absent, so live execution and benchmark reliability must remain described as unverified.
 
-Remaining engineering includes cancellation with verified cleanup, provider inventory reconciliation, full cloud export/restore, archive pagination, retention controls, stronger multi-user identity/permissions if needed, prepared desktop snapshots through a supported provider API, and live-validated cost accounting. None is replaced by a demo workspace or fabricated results.
+Remaining engineering includes verified external cleanup and provider inventory reconciliation after hard worker loss, whole-workspace cloud backup/restore, archive pagination, retention controls, multi-user identity/permissions if needed, custom task authoring, prepared desktop snapshots through a supported provider API, and live-validated cost accounting. Cooperative cancellation, per-run evidence export and scoped automation access are implemented; they do not establish those remaining capabilities. See [product readiness](PRODUCT_READINESS.md) and [agency release limits](AGENCY_RELEASE.md).
 
 ## Cooperative cancellation
 

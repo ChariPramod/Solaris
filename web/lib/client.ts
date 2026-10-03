@@ -4,7 +4,9 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
       url.endsWith("/gate") ||
       (url === "/api/jobs" && options?.method === "POST")
       ? 240000
-      : url.endsWith("/rerun") || url === "/api/dry-run"
+      : url.endsWith("/rerun") ||
+          url === "/api/dry-run" ||
+          (url === "/api/projects" && options?.method === "POST")
         ? 110000
         : 40000,
   );

@@ -61,6 +61,20 @@ def test_failed_upload_is_retried_later_without_marking_persisted(tmp_path, conf
     assert len(calls) == 2
 
 
+def test_trial_baseline_is_uploaded_with_original_bytes(tmp_path, config):
+    folder = tmp_path / "T01/1"
+    folder.mkdir(parents=True)
+    baseline = b'{"existing_files":["client-original.txt"]}\n'
+    (folder / "baseline.json").write_bytes(baseline)
+    calls = []
+    uploader = Uploader(tmp_path, config, post=lambda url, payload: calls.append(payload))
+    assert uploader.flush() == []
+    assert len(calls) == 1
+    assert calls[0]["path"] == "T01/1/baseline.json"
+    assert base64.b64decode(calls[0]["contentBase64"]) == baseline
+    assert artifact_bytes(tmp_path, "T01/1/baseline.json") == baseline
+
+
 def test_unsafe_and_oversized_artifacts_rejected(tmp_path):
     (tmp_path / "outside.json").write_text("{}")
     (tmp_path / "results.json").symlink_to(tmp_path / "outside.json")

@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         input.mode,
         cloudOrigin(),
         input.parentId,
+        request.headers.get("idempotency-key") ?? undefined,
       ),
       202,
     );

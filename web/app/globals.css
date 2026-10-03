@@ -120,6 +120,7 @@ summary:focus-visible {
   background: #0d1311;
   border-right: 1px solid #26302b;
   z-index: 20;
+  overflow-y: auto;
 }
 .brand {
   display: flex;
@@ -1491,8 +1492,12 @@ summary:focus-visible {
     inset: auto;
     padding: 16px 18px;
     border-bottom: 1px solid #2b3b30;
-    flex-direction: row;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 14px;
+    overflow: visible;
+  }
+  .sidebar .brand {
+    align-self: flex-start;
   }
   .brand > span:last-child {
     display: block;
@@ -1508,13 +1513,22 @@ summary:focus-visible {
   .sidebar nav {
     display: flex;
     margin: 0;
-    gap: 4px;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 4px;
+    scroll-padding-inline: 4px;
   }
-  .nav-item {
-    padding: 9px;
+  .sidebar .nav-item {
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 10px 12px;
     margin: 0;
-    width: 36px;
-    height: 36px;
+    width: auto;
+    height: 44px;
+    font-size: 12px;
+    white-space: nowrap;
   }
   .workspace-shell {
     display: block;

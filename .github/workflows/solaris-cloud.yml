@@ -1,0 +1,22 @@
+name: Solaris cloud integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run cloud diagnostic and its explicit diagnostic policy
+        env:
+          SOLARIS_URL: https://solaris-gauntlet.vercel.app
+          SOLARIS_API_TOKEN: ${{ secrets.SOLARIS_API_TOKEN }}
+          SOLARIS_IDEMPOTENCY_KEY: github-${{ github.repository_id }}-${{ github.run_id }}
+          SOLARIS_MODE: dry-run
+          SOLARIS_GATE_POLICY: '{"schema_version":1,"require_live":false,"min_pass_rate":0,"max_total_cost_usd":0}'
+        run: node scripts/solaris-ci.mjs

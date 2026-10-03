@@ -112,7 +112,7 @@ export function CloudAccess({
           <span className="text-xl">
             Solaris
             <span className="ml-2 hidden text-xs font-normal tracking-normal text-muted-foreground sm:inline">
-              AGENT EVALUATIONS
+              AUTOMATION ASSURANCE
             </span>
           </span>
         </a>
@@ -142,13 +142,13 @@ export function CloudAccess({
               id="product-title"
               className="max-w-2xl text-4xl leading-[1.12] font-semibold tracking-[-0.04em] sm:text-5xl"
             >
-              Know what your agent
-              <br className="hidden sm:block" /> can actually do.
+              Ship client automations
+              <br className="hidden sm:block" /> with evidence.
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-              Solaris tests computer-use agents on real desktop tasks, checks
-              the resulting files and app state, and keeps the evidence behind
-              every outcome.
+              A verification workspace for agencies delivering AI automations.
+              Test computer-use agents, organize results by client, and hand
+              over the evidence behind every outcome.
             </p>
             <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm">
               <a

@@ -21,7 +21,7 @@ const artifact = z
     path: z
       .string()
       .regex(
-        /^(?:results\.json|audit\.json|T(?:0[1-9]|1[0-2])\/[1-3]\/(?:task\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|\d{3,6}\.jpg|final\.jpg))$/,
+        /^(?:results\.json|audit\.json|T(?:0[1-9]|1[0-2])\/[1-3]\/(?:task\.json|baseline\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|\d{3,6}\.jpg|final\.jpg))$/,
       ),
     contentBase64: z
       .string()

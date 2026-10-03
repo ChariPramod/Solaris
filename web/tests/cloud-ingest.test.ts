@@ -72,6 +72,16 @@ test("ingestion authenticates the per-job token independently of browser cookies
   assert.equal(f.artifacts[0].bytes.toString(), "{}\n");
 });
 
+test("baseline snapshots are accepted only for planned trial slots", async () => {
+  const f = fixture();
+  const bytes = '{"existing_files":["client-original.txt"]}\n';
+  assert.equal((await f.send(file("T01/1/baseline.json", bytes))).status, 200);
+  assert.equal(f.artifacts[0].name, "T01/1/baseline.json");
+  assert.equal(f.artifacts[0].bytes.toString(), bytes);
+  assert.equal((await f.send(file("T02/1/baseline.json", bytes))).status, 400);
+  assert.equal((await f.send(file("T01/2/baseline.json", bytes))).status, 400);
+});
+
 test("ingestion rejects path traversal, unknown slots, invalid encoding and excess fields", async () => {
   const f = fixture();
   for (const payload of [

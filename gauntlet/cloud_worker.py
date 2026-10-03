@@ -23,7 +23,7 @@ from pathlib import Path
 MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
 ARTIFACT = re.compile(
     r"(?:results\.json|audit\.json|T(?:0[1-9]|1[0-2])/[1-3]/"
-    r"(?:task\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|[0-9]{3,6}\.jpg|final\.jpg))"
+    r"(?:task\.json|baseline\.json|result\.json|lifecycle\.jsonl|actions\.jsonl|[0-9]{3,6}\.jpg|final\.jpg))"
 )
 
 
