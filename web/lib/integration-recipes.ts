@@ -60,6 +60,18 @@ export const AUTOMATION_SAMPLE = {
 export const AUTOMATION_ENDPOINTS = [
   ["GET", "/api/automation/v1/runs", "List saved runs", "read"],
   [
+    "GET",
+    "/api/automation/v1/jobs?limit=50",
+    "Page through job history",
+    "read",
+  ],
+  [
+    "GET",
+    "/api/automation/v1/jobs?view=reserved",
+    "Read tracked executions",
+    "read",
+  ],
+  [
     "POST",
     "/api/automation/v1/jobs",
     "Launch once with Idempotency-Key",

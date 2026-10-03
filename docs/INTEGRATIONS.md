@@ -22,6 +22,8 @@ Use the configured HTTPS origin, for example `https://solaris-gauntlet.vercel.ap
 | Method | Path | Result |
 | --- | --- | --- |
 | GET | `/api/automation/v1/runs?limit=50&cursor=...` | One library page, warnings and continuation |
+| GET | `/api/automation/v1/jobs?limit=50&cursor=...` | One job-history page, warnings and continuation |
+| GET | `/api/automation/v1/jobs?view=reserved` | Current durable reservation records and tracking uncertainty |
 | POST | `/api/automation/v1/jobs` | Durable job; HTTP 202 does not mean tasks passed |
 | GET | `/api/automation/v1/jobs/{id}` | Current job state, no callback credential |
 | GET | `/api/automation/v1/runs/{id}` | Saved manifest and trial records |
@@ -29,6 +31,8 @@ Use the configured HTTPS origin, for example `https://solaris-gauntlet.vercel.ap
 | GET | `/api/automation/v1/compare?candidate={id}&baseline={id}` | Comparison of compatible preserved evidence |
 
 Run listings accept a page limit from 1–200 (default 50). Follow `page.nextCursor` until null, URL-encoding it; a short or empty `runs` array does not necessarily mean the archive ended. Deduplicate run IDs across pages. Pages are not a chronological snapshot; totals and search cover only records you load. See [query/response architecture](QUERY_RESPONSE.md).
+
+Job-history listings use the same page limits and continuation rules with a `jobs` array. An empty page with a continuation is not the end. `view=reserved` accepts no pagination parameters and reads the admission ledger independently of history. Its `reservations.known` is false when the ledger or a referenced job cannot be read. Reservations can include completed jobs until the next admission prunes them; `count` is not a free-capacity or currently-running count. A partial history or missing reservation is not evidence that a worker stopped. Continue polling a known job by its ID to establish its current state. Neither job GET endpoint allocates a worker or reconciles provider inventory.
 
 Job request:
 
@@ -82,3 +86,5 @@ Zapier documents secure connection-based authentication in its [API Request guid
 ## Evidence handoff
 
 Open an evaluation and select **Download evidence bundle**. The portable archive contains all saved indexed artifacts, checksums, scoped review histories, attempt context and a facts-only handoff summary. [Bundle format and limitations](EVIDENCE_BUNDLES.md) explain partial runs, size limits and verification. Delivery to clients is a separate deliberate action; Solaris does not automatically email or post private evidence.
+
+For an engagement overview, open a saved client project and download its [project handoff](PROJECT_HANDOFF_EXPORTS.md) as Markdown or JSON. Every assigned evaluation is resolved directly, private notes are excluded, and unavailable evidence stays explicit. This owner-only summary does not replace the individual evidence bundles or create client access.

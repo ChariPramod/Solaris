@@ -15,7 +15,7 @@ flowchart TB
         UI["React workspace<br/>Projects, evaluations, insights, templates"]
         OwnerAPI["Owner API<br/>Signed session and origin checks"]
         MachineAPI["Automation API v1<br/>Expiring scoped bearer tokens"]
-        Read["Evidence and workspace modules<br/>Validation, summaries, reviews, exports"]
+        Read["Evidence and workspace modules<br/>Validation, summaries, reviews, project handoffs"]
         Launch["Execution module<br/>Admission, idempotency, durable jobs"]
         Assess["Assessment module<br/>Policy and evidence validation"]
         Ingest["Worker callback API<br/>Per-job credential and plan checks"]
@@ -36,6 +36,7 @@ flowchart TB
     Git["Public GitHub source<br/>Pinned commit"]
     Solari["Solari desktop per live trial<br/>Seeded apps and deterministic verifiers"]
     Models["Anthropic or OpenAI<br/>Screenshot-to-action adapter"]
+    Downloads["Owner downloads<br/>Run evidence archives and project handoffs"]
 
     Owner --> UI
     UI --> OwnerAPI
@@ -47,6 +48,7 @@ flowchart TB
     MachineAPI --> Launch
     MachineAPI --> Assess
     Read --> Store
+    Read --> Downloads
     Launch --> Store
     Ingest --> Store
     Store --> Metadata
@@ -118,7 +120,8 @@ These optimizations reduce redundant work without deleting preserved evidence or
 | Duplicate artifact callback | A matching path, object key, size and digest returns after one index read | No object upload or index rewrite; this is deduplication, not a new integrity audit of the stored body |
 | Concurrent reads of the same immutable object | Same key and size limit share an in-flight read within one server instance; each caller receives its own buffer | Up to 64 tracked reads; success or error removes the entry; no retained cache or TTL |
 | Library refresh and paging | UI aborts superseded requests, ignores late responses and merges pages by run ID | Refresh resets the first page; failed loading retains existing results |
-| Job polling | Confirmed-idle polling changes from every 10 seconds to every 60 seconds; active or incomplete listings retain a 10-second interval; hidden tabs do not poll | Visible tabs refresh immediately; library changes track job identity/status rather than heartbeat timestamps |
+| Job polling | Read current admission reservations independently of paged history; known active jobs that leave the ledger are refreshed by ID | Confirmed-idle polling every 60 seconds; active/uncertain tracking every 10 seconds; hidden tabs pause status polling; no capacity inference from a partial archive |
+| Project handoff | Resolve all assigned IDs directly; capture a verified manifest using two index reads and one manifest read per available evaluation | Project revision checked before and after collection; unavailable runs remain explicit; no full artifact downloads or storage writes |
 
 The summary is optional metadata inside the existing version-1 artifact index: `runSummary: { version: 1, manifestSha256, run }`. Ingestion derives it from a parsed manifest and commits it with that manifest's pointer. Old runs need no migration to remain readable, and list requests do not rewrite their indexes. A summary lets a list page avoid re-reading the complete body; it is not a fresh integrity audit. Detail, export and assessment reads verify the evidence they consume.
 
@@ -126,7 +129,9 @@ The counts above describe module operations, excluding authentication reads, pro
 
 `GET /api/runs` and `GET /api/automation/v1/runs` expose cloud pages with `limit` (1–200; default 50) and an opaque `cursor`. Their response includes `page.nextCursor`, `page.limit` and `page.scanned`. Pages follow provider listing order; only the loaded records are sorted by creation time. They are not a globally newest-first query or a snapshot transaction. Search, project assignment choices and insights explicitly operate on the loaded set. [The paging contract](QUERY_RESPONSE.md#paged-library-queries) describes continuation and refresh behavior.
 
-Mutable JSON reads remain fresh: owner/API credential checks, token revocation, admission state, artifact indexes and project revisions never use the immutable-body coalescer. There is no SQL database, search index, distributed response cache or background compaction job. The bounded scans retained for job history and admission initialization are separate from user-facing run pagination.
+Mutable JSON reads remain fresh: owner/API credential checks, token revocation, admission state, artifact indexes and project revisions never use the immutable-body coalescer. There is no SQL database, search index, distributed response cache or background compaction job. Job history also supports continuation pages; admission initialization retains its separate bounded legacy scan. The reservation read view validates the existing ledger without initializing it, allocating workers, pruning reservations or querying provider inventory. Job expiry reads can still persist the existing interrupted-state reconciliation.
+
+The [project handoff](PROJECT_HANDOFF_EXPORTS.md) is a metadata-only Markdown/JSON download: private notes and raw evidence are omitted, live/diagnostic modes stay distinct, and incomplete cost or coverage remains explicit. Per-run evidence archives remain the way to download actual artifacts. Neither export provides client authentication or full workspace restore.
 
 Sources: [summary projection](../web/lib/cloud-run-summary.ts), [query validation](../web/lib/library-query.ts), [artifact module](../web/lib/cloud-artifacts.ts), [storage adapter](../web/lib/cloud-storage.ts), [workspace loading](../web/components/workspace.tsx), [job polling](../web/components/cloud-jobs.tsx).
 

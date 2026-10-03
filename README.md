@@ -14,7 +14,7 @@ For unfinished product capabilities, implementation status and concrete acceptan
 
 ## Agency delivery workspace
 
-The workspace now includes client projects with manual delivery status, private notes, reversible archiving and search; workflow templates, evidence-based insights, complete per-run evidence bundles, scoped integration API keys, GitHub Actions automation, n8n/Zapier connection recipes, atomic evaluation capacity and launch idempotency. See [the agency release](docs/AGENCY_RELEASE.md), [integration guide](docs/INTEGRATIONS.md) and [evidence bundle format](docs/EVIDENCE_BUNDLES.md). Client projects organize one owner workspace; they do not provide multi-tenant isolation. Live provider validation remains required.
+The workspace now includes client projects with manual delivery status, private notes, reversible archiving, search and [project handoff downloads](docs/PROJECT_HANDOFF_EXPORTS.md); workflow templates, evidence-based insights, complete per-run evidence bundles, scoped integration API keys, GitHub Actions automation, n8n/Zapier connection recipes, atomic evaluation capacity and launch idempotency. Execution history is paginated, with current job tracking refreshed independently. See [the agency release](docs/AGENCY_RELEASE.md), [integration guide](docs/INTEGRATIONS.md) and [evidence bundle format](docs/EVIDENCE_BUNDLES.md). Client projects organize one owner workspace; they do not provide multi-tenant isolation. Live provider validation remains required.
 
 ## Hosted product and public source
 
@@ -22,7 +22,7 @@ The public source repository is [ChariPramod/Solaris](https://github.com/ChariPr
 
 Cloud mode adds owner access-key sign-in, durable jobs, cooperative cancellation with partial-evidence preservation, real dry/live evaluation launches, saved reviews and configurations, attempt history, comparisons and regression gates. Live execution requires separately configured Solari and selected-provider credentials and has not yet been verified. A cloud dry run exercises the harness without model calls or desktops, but Vercel worker/storage usage may still be billable.
 
-**Validation:** 426 Python tests and 195 TypeScript tests pass; GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. Published sign-in layout and invalid-key feedback were checked in the browser. The authenticated browser walkthrough now covers diagnostic launch, saved evidence and review, comparison, an expected gate rejection, and live-setup blockers. Exhaustive browser/accessibility coverage, rollback and live provider execution remain unverified.
+**Validation:** 426 Python tests and 226 TypeScript tests pass; GitHub CI is green on Python 3.11/3.12/3.13 and Node 22. Published sign-in layout and invalid-key feedback were checked in the browser. The authenticated browser walkthrough now covers diagnostic launch, saved evidence and review, comparison, an expected gate rejection, and live-setup blockers. Exhaustive browser/accessibility coverage, rollback and live provider execution remain unverified.
 
 See [the Vercel deployment and operations guide](docs/VERCEL.md) for setup, private storage, authentication, recovery, operating limits, and remaining validation. GitHub Pages cannot run the authenticated API, persistent storage adapters or Python workers; the repository is public while workspace data remains private.
 

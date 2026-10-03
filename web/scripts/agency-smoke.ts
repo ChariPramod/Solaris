@@ -99,6 +99,9 @@ async function main() {
     );
     const job = await machine("/jobs", runner.secret, input, 202, launchKey);
     console.log("Accepted diagnostic job", job.id);
+    const tracked = await machine("/jobs?view=reserved", reader.secret);
+    assert.equal(tracked.reservations.known, true);
+    assert.ok(tracked.jobs.some((value: any) => value.id === job.id));
     const replay = await machine("/jobs", runner.secret, input, 202, launchKey);
     assert.equal(replay.id, job.id);
     await machine(
@@ -155,17 +158,51 @@ async function main() {
     console.log(
       `Cloud archive traversed safely: ${pages} pages, ${listed.size} evaluations.`,
     );
-    const jobs = await owner("/api/jobs");
-    const savedJob = jobs.jobs.find((value: any) => value.id === job.id);
-    assert.equal(savedJob.status, "complete");
+    // The first provider page is not guaranteed to contain the newest random job ID.
+    const directJob = await machine(`/jobs/${job.id}`, reader.secret);
+    assert.equal(directJob.status, "complete");
+    const ownerJob = await owner(`/api/jobs/${job.id}`);
+    assert.equal(ownerJob.id, job.id);
+    assert.equal(ownerJob.status, "complete");
+    assert.equal((await fetch(`${origin}/api/jobs/${job.id}`)).status, 401);
     if (process.env.GAUNTLET_EXPECTED_REVISION)
       assert.equal(
-        savedJob.sourceRevision,
+        directJob.sourceRevision,
         process.env.GAUNTLET_EXPECTED_REVISION,
       );
+    const jobIds = new Set<string>();
+    const jobCursors = new Set<string>();
+    let jobCursor: string | null = null;
+    let jobPages = 0;
+    do {
+      const page = await machine(
+        `/jobs?limit=2${jobCursor ? `&cursor=${encodeURIComponent(jobCursor)}` : ""}`,
+        reader.secret,
+      );
+      assert.equal(page.page.limit, 2);
+      assert.ok(page.page.scanned <= 2);
+      for (const item of page.jobs) jobIds.add(item.id);
+      jobCursor = page.page.nextCursor;
+      if (jobCursor) {
+        assert.ok(!jobCursors.has(jobCursor), "Job continuation repeated.");
+        jobCursors.add(jobCursor);
+      }
+      assert.ok(
+        ++jobPages <= 100,
+        "Job history exceeded the acceptance scan bound.",
+      );
+    } while (jobCursor);
+    assert.ok(jobIds.has(job.id));
+    const ownerJobs = await owner("/api/jobs?limit=1");
+    assert.equal(ownerJobs.page.limit, 1);
+    await owner("/api/jobs?limit=201", undefined, 400);
+    await machine("/jobs?view=reserved&limit=1", reader.secret, undefined, 400);
+    console.log(
+      `Execution history traversed: ${jobPages} pages, ${jobIds.size} jobs; durable tracking found the accepted job.`,
+    );
     const project = await owner("/api/projects", {
       revision: 0,
-      name: "Agency release acceptance",
+      name: "Agency handoff acceptance",
       client: "Solaris internal validation",
       runIds: [job.id],
       status: "review",
@@ -204,6 +241,62 @@ async function main() {
     assert.equal(restored.revision, 4);
     assert.equal(restored.notes, project.notes);
     assert.deepEqual(restored.runIds, [job.id]);
+    const handoffPath = `/api/projects/${project.id}/handoff?revision=${restored.revision}`;
+    const handoff = await owner(handoffPath + "&format=json");
+    assert.equal(handoff.format, "solaris-project-handoff");
+    assert.equal(handoff.version, 1);
+    assert.equal(handoff.privateNotesIncluded, false);
+    assert.equal(handoff.project.revision, 4);
+    assert.equal(handoff.project.deliveryStatus, "review");
+    assert.equal(handoff.assignedRuns, 1);
+    assert.equal(handoff.availableRuns, 1);
+    assert.equal(handoff.unavailableRuns, 0);
+    assert.equal(handoff.runs[0].id, job.id);
+    assert.equal(handoff.runs[0].mode, "diagnostic");
+    assert.equal(handoff.runs[0].recordedTrials, 2);
+    assert.match(handoff.runs[0].manifestSha256, /^[a-f0-9]{64}$/);
+    assert.equal("notes" in handoff.project, false);
+    assert.ok(!JSON.stringify(handoff).includes(project.notes));
+    await owner(
+      `/api/projects/${project.id}/handoff?revision=3`,
+      undefined,
+      409,
+    );
+    await owner(handoffPath + "&format=json&format=markdown", undefined, 400);
+    const handoffResponse = await fetch(origin + handoffPath, {
+      headers: { cookie },
+      redirect: "error",
+      signal: AbortSignal.timeout(120000),
+    });
+    assert.equal(handoffResponse.status, 200);
+    assert.match(
+      handoffResponse.headers.get("content-type") ?? "",
+      /^text\/markdown/,
+    );
+    assert.equal(
+      handoffResponse.headers.get("x-solaris-unavailable-runs"),
+      "0",
+    );
+    assert.equal(
+      handoffResponse.headers.get("x-solaris-project-revision"),
+      "4",
+    );
+    const markdown = await handoffResponse.text();
+    assert.match(markdown, /# Solaris project handoff/);
+    assert.match(markdown, /diagnostic \/ non-live/);
+    assert.ok(!markdown.includes(project.notes));
+    assert.equal((await fetch(origin + handoffPath)).status, 401);
+    assert.equal(
+      (
+        await fetch(origin + handoffPath, {
+          headers: { cookie, "sec-fetch-site": "cross-site" },
+        })
+      ).status,
+      403,
+    );
+    console.log(
+      "Project handoffs verified in JSON and Markdown, with notes excluded, stable project revision, digest evidence and access guards.",
+    );
     const bundle = await fetch(`${origin}/api/runs/${job.id}/bundle`, {
       headers: { cookie },
       redirect: "error",
@@ -236,7 +329,7 @@ async function main() {
       JSON.stringify({
         jobId: job.id,
         projectId: project.id,
-        sourceRevision: savedJob.sourceRevision,
+        sourceRevision: directJob.sourceRevision,
       }),
     );
     for (const token of [reader, runner]) {

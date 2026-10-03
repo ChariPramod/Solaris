@@ -11,6 +11,7 @@ import {
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
+import { ProjectHandoff } from "./project-handoff";
 import { api } from "@/lib/client";
 import { dateLabel } from "@/lib/domain";
 import {
@@ -580,6 +581,13 @@ export function ClientProjects({
               {busy ? "Saving…" : current ? "Save project" : "Create project"}
             </Button>
           </fieldset>
+          {current && (
+            <ProjectHandoff
+              projectId={current.id}
+              revision={current.revision}
+              disabled={busy || loading || !loaded}
+            />
+          )}
         </form>
       </div>
     </section>

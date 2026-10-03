@@ -9,6 +9,12 @@ import { dateLabel, prettyName } from "@/lib/domain";
 import { jobLibrarySignature, jobPollingDelay } from "@/lib/job-polling";
 import type { PublicCloudJob } from "@/lib/cloud-runner";
 import type { CloudJobList } from "@/lib/cloud-job-list";
+import {
+  mergeJobs,
+  mergeJobPage,
+  refreshUntrackedJobs,
+  visibleJobs,
+} from "@/lib/job-pagination";
 
 export function CloudJobs({
   revision,
@@ -19,11 +25,22 @@ export function CloudJobs({
   onOpen: (id: string) => void;
   onChange: () => void;
 }) {
-  const [jobs, setJobs] = useState<PublicCloudJob[]>([]);
+  const [reserved, setReserved] = useState<PublicCloudJob[]>([]);
+  const [history, setHistory] = useState<CloudJobList | null>(null);
+  const jobs = mergeJobs(history?.jobs ?? [], reserved);
+  const observedJobs = useRef<PublicCloudJob[]>([]);
+  observedJobs.current = jobs;
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(6);
+  const displayed = visibleJobs(jobs, historyVisible);
+  const historyRequest = useRef<AbortController | null>(null);
+  const historyGeneration = useRef(0);
+  const historyCursors = useRef(new Set<string>());
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [truncated, setTruncated] = useState(false);
+  const [trackingKnown, setTrackingKnown] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [stopping, setStopping] = useState<string[]>([]);
   const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
@@ -36,8 +53,11 @@ export function CloudJobs({
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      setJobs((previous) =>
-        previous.map((job) => (job.id === id ? updated : job)),
+      setReserved((previous) => mergeJobs(previous, [updated]));
+      setHistory((previous) =>
+        previous
+          ? { ...previous, jobs: mergeJobs(previous.jobs, [updated]) }
+          : previous,
       );
     } catch (error) {
       setStopErrors((errors) => ({
@@ -73,17 +93,45 @@ export function CloudJobs({
       const abort = new AbortController();
       request = abort;
       try {
-        const data = await api<CloudJobList>("/api/jobs", {
+        const snapshot = await api<CloudJobList>("/api/jobs?view=reserved", {
           signal: abort.signal,
+        });
+        const observed = observedJobs.current;
+        const data = await refreshUntrackedJobs(observed, snapshot, (id) => {
+          abort.signal.throwIfAborted();
+          return api<PublicCloudJob>(`/api/jobs/${id}`, {
+            signal: abort.signal,
+          });
         });
         if (disposed || abort.signal.aborted) return;
         const next = jobLibrarySignature(data.jobs);
         if (signature.current && next !== signature.current) onChange();
         signature.current = next;
         pollingDelay.current = jobPollingDelay(data);
-        setJobs(data.jobs);
+        // Keep new observations in already loaded history, but never use an
+        // archive cursor or a partial history page to infer current execution.
+        const operationalIds = new Set([
+          ...snapshot.jobs.map((job) => job.id),
+          ...observed
+            .filter((job) => jobPollingDelay({ jobs: [job] }) === 10_000)
+            .map((job) => job.id),
+        ]);
+        setReserved((previous) =>
+          mergeJobs(
+            previous,
+            data.jobs.filter((job) => operationalIds.has(job.id)),
+          ),
+        );
+        setHistory((previous) =>
+          previous
+            ? {
+                ...previous,
+                jobs: mergeJobs(previous.jobs, data.jobs),
+              }
+            : previous,
+        );
         setWarnings(data.warnings ?? []);
-        setTruncated(data.truncated ?? false);
+        setTrackingKnown(data.reservations?.known === true);
         setLoaded(true);
         setError("");
       } catch (e) {
@@ -117,6 +165,75 @@ export function CloudJobs({
       document.removeEventListener("visibilitychange", visibilityChanged);
     };
   }, [revision, refresh, onChange]);
+  useEffect(() => {
+    const generation = ++historyGeneration.current;
+    historyCursors.current.clear();
+    setHistoryVisible(6);
+    setReserved((previous) =>
+      previous.filter((job) => jobPollingDelay({ jobs: [job] }) === 10_000),
+    );
+    historyRequest.current?.abort();
+    const abort = new AbortController();
+    historyRequest.current = abort;
+    setHistoryLoading(true);
+    setHistoryError("");
+    void api<CloudJobList>("/api/jobs?limit=25", { signal: abort.signal })
+      .then((data) => {
+        if (!abort.signal.aborted && generation === historyGeneration.current)
+          setHistory(data);
+      })
+      .catch((error: Error) => {
+        if (!abort.signal.aborted && generation === historyGeneration.current)
+          setHistoryError(error.message);
+      })
+      .finally(() => {
+        if (generation === historyGeneration.current) {
+          historyRequest.current = null;
+          setHistoryLoading(false);
+        }
+      });
+    return () => {
+      abort.abort();
+      historyRequest.current?.abort();
+    };
+  }, [revision, refresh]);
+
+  async function loadMore() {
+    const cursor = history?.page?.nextCursor;
+    if (!cursor || historyRequest.current) return;
+    const generation = historyGeneration.current;
+    const abort = new AbortController();
+    historyRequest.current = abort;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const data = await api<CloudJobList>(
+        `/api/jobs?${new URLSearchParams({ limit: "25", cursor })}`,
+        { signal: abort.signal },
+      );
+      if (abort.signal.aborted || generation !== historyGeneration.current)
+        return;
+      if (
+        data.page?.nextCursor &&
+        (data.page.nextCursor === cursor ||
+          historyCursors.current.has(data.page.nextCursor))
+      )
+        throw new Error(
+          "Job history did not advance. Refresh before continuing.",
+        );
+      historyCursors.current.add(cursor);
+      setHistory((previous) => mergeJobPage(previous, data));
+    } catch (error) {
+      if (!abort.signal.aborted && generation === historyGeneration.current)
+        setHistoryError((error as Error).message);
+    } finally {
+      if (generation === historyGeneration.current) {
+        historyRequest.current = null;
+        setHistoryLoading(false);
+      }
+    }
+  }
+  const allWarnings = [...new Set([...warnings, ...(history?.warnings ?? [])])];
   return (
     <section
       className="mb-6 rounded-xl border bg-card p-5"
@@ -141,8 +258,10 @@ export function CloudJobs({
         saved. Job completion does not mean every task passed.
       </p>
       <p className="mb-4 text-xs text-muted-foreground">
-        Status refreshes every 10 seconds while jobs are active and every minute
-        when idle. Automatic refresh pauses while this tab is hidden.
+        Current executions refresh independently of history every 10 seconds
+        while active or uncertain, and every minute when confirmed idle.
+        Automatic status refresh pauses while this tab is hidden. Refresh
+        restarts job history from its first page.
       </p>
       {error && (
         <p role="alert" className="mb-3 text-sm text-destructive">
@@ -150,7 +269,19 @@ export function CloudJobs({
           starting another attempt.
         </p>
       )}
-      {warnings.length > 0 && (
+      {historyError && (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {historyError} Previously loaded history is retained. Retry loading or
+          refresh.
+        </p>
+      )}
+      {loaded && !trackingKnown && (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          Current execution tracking is incomplete. The loaded history cannot
+          establish that the workspace is idle.
+        </p>
+      )}
+      {allWarnings.length > 0 && (
         <div
           role="status"
           className="mb-3 rounded-lg border p-3 text-sm text-muted-foreground"
@@ -159,40 +290,41 @@ export function CloudJobs({
             Some job entries could not be loaded. Available jobs remain below.
           </p>
           <ul className="mt-2 space-y-1">
-            {warnings.slice(0, 3).map((warning) => (
+            {allWarnings.slice(0, 3).map((warning) => (
               <li key={warning} className="break-words">
                 {warning}
               </li>
             ))}
           </ul>
-          {warnings.length > 3 && (
+          {allWarnings.length > 3 && (
             <p className="mt-2">
-              {warnings.length - 3} more job warnings. Refresh to retry loading.
+              {allWarnings.length - 3} more job warnings. Refresh to retry
+              loading.
             </p>
           )}
         </div>
       )}
-      {truncated && (
+      {history?.page?.nextCursor && (
         <p role="status" className="mb-3 text-sm text-muted-foreground">
-          The job listing reached its 200-entry limit. This is a partial
-          archive, sorted within the loaded entries.
+          More job history is available. Jobs are sorted within the loaded
+          entries; current tracked executions are included independently.
         </p>
       )}
-      {!loaded && !error && (
+      {!loaded && !history && !error && !historyError && (
         <p role="status" className="flex items-center gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" />
           Loading jobs…
         </p>
       )}
-      {loaded && jobs.length === 0 && (
+      {loaded && history && jobs.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          {warnings.length || truncated
+          {allWarnings.length || history?.truncated
             ? "No readable jobs in this listing. Refresh status before starting another attempt."
             : "No jobs yet. Create an evaluation to run the harness in an isolated worker."}
         </p>
       )}
       <div className="space-y-3">
-        {jobs.slice(0, 12).map((job) => (
+        {displayed.jobs.map((job) => (
           <article key={job.id} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
@@ -267,12 +399,38 @@ export function CloudJobs({
           </article>
         ))}
       </div>
-      {jobs.length > 12 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Showing the latest 12 loaded jobs. Saved evaluations remain in the
-          library.
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Showing {displayed.jobs.length} of {jobs.length} loaded jobs.
+          {displayed.current > 0
+            ? ` All ${displayed.current} active or uncertain jobs are shown first.`
+            : " Delivery history is retained."}
         </p>
-      )}
+        <div className="flex flex-wrap gap-2">
+          {displayed.remaining > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setHistoryVisible((value) => value + 6)}
+            >
+              Show more loaded jobs ({displayed.remaining} remaining)
+            </Button>
+          )}
+          {history?.page?.nextCursor && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={historyLoading}
+              onClick={() => void loadMore()}
+            >
+              {historyLoading ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : null}
+              {historyLoading ? "Loading history…" : "Load more jobs"}
+            </Button>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

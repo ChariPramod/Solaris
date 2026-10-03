@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { listCloudJobs } from "../lib/cloud-job-list";
+import { listCloudJobs, listReservedCloudJobs } from "../lib/cloud-job-list";
 import type { PublicCloudJob } from "../lib/cloud-runner";
 import { StoreError } from "../lib/store";
 
@@ -137,4 +137,114 @@ test("whole-list outage is an explicit sanitized failure, while an empty archive
     }),
     { jobs: [], warnings: [], truncated: false },
   );
+});
+
+test("job history traverses beyond 200 entries with opaque continuation and bounded reads", async () => {
+  let requests = 0;
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await listCloudJobs(
+      {
+        listKeys: async () => {
+          throw new Error("Legacy listing must not run");
+        },
+        listKeyPage: async (prefix, limit, after) => {
+          requests++;
+          assert.equal(prefix, "jobs/");
+          assert.equal(limit, 100);
+          const offset = after ? Number(after.split(":")[1]) : 0;
+          return {
+            keys: Array.from(
+              { length: Math.min(100, 205 - offset) },
+              (_, index) => key(offset + index),
+            ),
+            nextCursor: offset + 100 < 205 ? `opaque:${offset + 100}` : null,
+          };
+        },
+        getPublicCloudJob: async (value) =>
+          job(Number.parseInt(value.slice(6), 16)),
+      },
+      { limit: 100, ...(cursor ? { cursor } : {}) },
+    );
+    for (const item of result.jobs) seen.add(item.id);
+    assert.equal(result.page?.scanned, result.jobs.length);
+    assert.equal(result.truncated, result.page?.nextCursor !== null);
+    cursor = result.page?.nextCursor ?? undefined;
+  } while (cursor);
+  assert.equal(requests, 3);
+  assert.equal(seen.size, 205);
+});
+
+test("a page containing only corrupt jobs retains its continuation cursor", async () => {
+  const result = await listCloudJobs(
+    {
+      listKeys: async () => {
+        throw new Error("Not used");
+      },
+      listKeyPage: async () => ({ keys: [key(1)], nextCursor: "next-page" }),
+      getPublicCloudJob: async () => {
+        throw new Error("private SDK failure");
+      },
+    },
+    { limit: 1 },
+  );
+  assert.equal(result.jobs.length, 0);
+  assert.equal(result.page?.nextCursor, "next-page");
+  assert.equal(result.page?.scanned, 1);
+  assert.equal(result.warnings.length, 1);
+  assert.doesNotMatch(JSON.stringify(result), /private|SDK/);
+});
+
+test("reserved work stays visible without listing arbitrary archive pages", async () => {
+  const reads: string[] = [];
+  const result = await listReservedCloudJobs({
+    readReservations: async () => [id(999)],
+    getPublicCloudJob: async (value) => {
+      reads.push(value);
+      return { ...job(999), status: "running" };
+    },
+  });
+  assert.deepEqual(reads, [id(999)]);
+  assert.deepEqual(result.reservations, { known: true, count: 1 });
+  assert.equal(result.jobs[0].status, "running");
+  assert.equal(result.page, undefined);
+});
+
+test("unavailable tracking and unreadable reserved jobs cannot establish idle", async () => {
+  for (const readReservations of [
+    async () => null,
+    async () => {
+      throw new Error("private credentials");
+    },
+  ]) {
+    const result = await listReservedCloudJobs({
+      readReservations,
+      getPublicCloudJob: async () => {
+        throw new Error("Must not read");
+      },
+    });
+    assert.deepEqual(result.reservations, { known: false, count: null });
+    assert.equal(result.warnings.length, 1);
+    assert.doesNotMatch(JSON.stringify(result), /private|credentials/);
+  }
+  const partial = await listReservedCloudJobs({
+    readReservations: async () => [id(1), id(2)],
+    getPublicCloudJob: async (value) => {
+      if (value === id(1)) return job(1);
+      throw new Error("Private provider error");
+    },
+  });
+  assert.equal(partial.jobs.length, 1);
+  assert.deepEqual(partial.reservations, { known: false, count: 2 });
+  const empty = await listReservedCloudJobs({
+    readReservations: async () => [],
+    getPublicCloudJob: async () => job(1),
+  });
+  assert.deepEqual(empty, {
+    jobs: [],
+    warnings: [],
+    truncated: false,
+    reservations: { known: true, count: 0 },
+  });
 });

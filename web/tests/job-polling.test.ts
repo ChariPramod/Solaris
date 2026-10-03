@@ -12,6 +12,7 @@ test("active execution and cancellation remain responsive; a complete idle listi
       jobs: ["complete", "failed", "cancelled", "interrupted"].map(
         (status) => ({
           id: status,
+          allocationState: "stopped" as const,
           status: status as "complete" | "failed" | "cancelled" | "interrupted",
         }),
       ),
@@ -22,6 +23,16 @@ test("active execution and cancellation remain responsive; a complete idle listi
 
 test("an unknown or partial listing cannot silently switch to idle polling", () => {
   assert.equal(jobPollingDelay(null), 10_000);
+  assert.equal(
+    jobPollingDelay({ jobs: [], reservations: { known: false, count: null } }),
+    10_000,
+  );
+  for (const status of ["interrupted", "failed"] as const) {
+    assert.equal(
+      jobPollingDelay({ jobs: [{ id: "uncertain", status }] }),
+      10_000,
+    );
+  }
   assert.equal(
     jobPollingDelay({ jobs: [], warnings: ["Unreadable job"] }),
     10_000,

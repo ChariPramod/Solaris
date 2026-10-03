@@ -51,6 +51,26 @@ export function cloudJobLimit(
   return Number(value);
 }
 
+async function readAdmissionLedger(store: Pick<Store, "readJSON">) {
+  const saved = await store.readJSON<unknown>(LEDGER_KEY);
+  if (!saved) return null;
+  const parsed = ledgerSchema.safeParse(saved.value);
+  if (!parsed.success)
+    throw new StoreError(
+      "Workspace execution capacity cannot be verified. Repair the admission record before launching another evaluation.",
+      503,
+    );
+  return { value: parsed.data, etag: saved.etag };
+}
+
+/** Read-only visibility, never admission or provider reconciliation. Null means unknown. */
+export async function readCloudJobReservations(
+  store: Pick<Store, "readJSON"> = { readJSON },
+): Promise<string[] | null> {
+  const ledger = await readAdmissionLedger(store);
+  return ledger ? ledger.value.reservations.map(({ id }) => id) : null;
+}
+
 /** A single CAS record serializes admission across server instances; it never relies on a partial job listing. */
 export function createCloudAdmission(dependencies: Dependencies) {
   const store = dependencies.store ?? { readJSON, writeJSON, listKeys };
@@ -89,15 +109,7 @@ export function createCloudAdmission(dependencies: Dependencies) {
   }
 
   async function readLedger() {
-    const saved = await store.readJSON<unknown>(LEDGER_KEY);
-    if (!saved) return null;
-    const parsed = ledgerSchema.safeParse(saved.value);
-    if (!parsed.success)
-      throw new StoreError(
-        "Workspace execution capacity cannot be verified. Repair the admission record before launching another evaluation.",
-        503,
-      );
-    return { value: parsed.data, etag: saved.etag };
+    return readAdmissionLedger(store);
   }
 
   async function initialize() {

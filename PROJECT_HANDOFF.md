@@ -2,6 +2,16 @@
 
 Updated October 2, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
 
+## Project delivery and execution visibility iteration
+
+Saved client projects now download a [project handoff](docs/PROJECT_HANDOFF_EXPORTS.md) in Markdown or JSON. Every assigned evaluation is resolved directly, including older runs outside loaded library pages. Manifest byte counts and checksums are verified; changed/missing evidence remains explicit; private project notes and raw evidence are omitted. The download checks the project revision before and after collection, never changes a run and never treats a manual delivery status as a release approval.
+
+Cloud job history now supports continuation pages in both owner and scoped automation APIs. Current execution tracking reads the durable admission ledger independently of history; previously observed active jobs that leave the ledger are refreshed directly by ID. The UI keeps actionable/uncertain jobs first, shows six completed entries initially, and has explicit controls for more loaded entries and additional provider pages. Failures retain prior observations. Missing/corrupt tracking cannot establish idle or available capacity, and job reads do not query external provider inventory.
+
+The shared browser JSON helper now rejects unreadable HTTP 200 bodies instead of installing an error object as successful data. It preserves cancellation causes and does not retry writes after ambiguous responses. Architecture/query diagrams, API recipes and the production acceptance script cover these changes. Local validation passed: **426 Python + 226 TypeScript tests (652 total)**, lint/format, typecheck, optimized production build, real HTTP integration and streamed evidence export with every extracted checksum verified. All ten Mermaid diagrams parsed and rendered successfully; their source links resolve. Production acceptance follows deployment of this source.
+
+Owner work for this increment: no migration, new account, key rotation or reconnection is required. Choose a saved project, download its handoff, and inspect it before sharing. Download separate per-run evidence bundles when the client needs raw proof. The outstanding live validation still requires private Solari/model credentials and a reviewed first-run scope. Whole-workspace backup/restore, provider resource reconciliation, tenant isolation and spending controls remain unfinished engineering; these downloads do not claim to solve them.
+
 ## Architecture, storage and delivery iteration
 
 Added [overall architecture diagrams](docs/ARCHITECTURE.md) and [query/response diagrams](docs/QUERY_RESPONSE.md), tracing authentication, cloud/local reads, workers, callbacks, conditional edits, gates and exports. The diagrams link directly to their implementations.
@@ -52,7 +62,7 @@ The accepted job IDs are `cloud_636d9a1609324b11c94790f4210f5b38` and `cloud_b49
 
 The initial published browser check covered sign-in layout and invalid-key feedback; the presentation release extends that coverage as recorded below. The original broad cloud acceptance used HTTP. Deployment rollback has not been exercised. Live provider credentials remain absent, and no live desktop/model benchmark is verified.
 
-Cloud evidence uploads are bounded to 2 MiB per artifact. Listings are capped at 200 run/job records. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. Cooperative cancellation and stable retry identities are implemented. There is no automatic execution replay, resume, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
+Cloud evidence uploads are bounded to 2 MiB per artifact. Cloud run/job libraries support continuation pages with 1–200 entries per page; local library scans remain bounded. Jobs have a provider-enforced 45-minute sandbox lifetime and a shorter worker execution deadline; a timed-out or ambiguous request must be investigated before a new attempt. Cooperative cancellation and stable retry identities are implemented. There is no automatic execution replay, resume, remote desktop sweeper, hard spending cap or multi-user role system. Dry mode omits provider credentials, but cloud infrastructure itself may incur usage charges.
 
 ## Presentation readiness
 

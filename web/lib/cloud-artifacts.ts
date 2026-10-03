@@ -220,6 +220,24 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
   async function readCloudRun(id: string) {
     return runFromIndex(id, (await artifactIndex(id)).value);
   }
+  /** One verified manifest, with a pointer recheck. Other artifacts may change independently. */
+  async function readCloudRunSnapshot(id: string) {
+    const before = await artifactIndex(id);
+    const run = await runFromIndex(id, before.value);
+    const manifest = before.value.files["results.json"];
+    const after = (await artifactIndex(id)).value.files["results.json"];
+    if (
+      !after ||
+      after.key !== manifest.key ||
+      after.sha256 !== manifest.sha256 ||
+      after.size !== manifest.size
+    )
+      throw new StoreError(
+        "The saved manifest changed during collection.",
+        409,
+      );
+    return { run, manifestSha256: manifest.sha256 };
+  }
   async function listCloudRuns(options?: {
     limit: number;
     cursor?: string;
@@ -324,6 +342,7 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
     getCloudEvidenceFiles,
     withEvidenceProject,
     readCloudRun,
+    readCloudRunSnapshot,
     listCloudRuns,
     readCloudTrial,
   };
@@ -336,6 +355,7 @@ export const {
   getCloudEvidenceFiles,
   withEvidenceProject,
   readCloudRun,
+  readCloudRunSnapshot,
   listCloudRuns,
   readCloudTrial,
 } = createCloudArtifacts();

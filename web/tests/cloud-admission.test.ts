@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCloudAdmission, cloudJobLimit } from "../lib/cloud-admission";
+import {
+  createCloudAdmission,
+  cloudJobLimit,
+  readCloudJobReservations,
+} from "../lib/cloud-admission";
 import type { CloudJob } from "../lib/cloud-runner";
 import { StoreError } from "../lib/store";
 
@@ -143,4 +147,37 @@ test("malformed admission state fails closed and limit configuration is bounded"
   assert.equal(cloudJobLimit({ GAUNTLET_MAX_ACTIVE_JOBS: "8" }), 8);
   for (const value of ["0", "9", "2.0", "-1", "invalid"])
     assert.throws(() => cloudJobLimit({ GAUNTLET_MAX_ACTIVE_JOBS: value }));
+});
+
+test("reservation visibility validates durable identities and never changes admission state", async () => {
+  const calls: string[] = [];
+  const saved = { version: 1, reservations: [{ id: id(1), fingerprint }] };
+  const result = await readCloudJobReservations({
+    readJSON: async <T>(key: string) => {
+      calls.push(key);
+      return { value: saved as T, etag: "1" };
+    },
+  });
+  assert.deepEqual(result, [id(1)]);
+  assert.deepEqual(calls, ["control/job-admission.json"]);
+  assert.equal(
+    await readCloudJobReservations({ readJSON: async () => null }),
+    null,
+  );
+  await assert.rejects(
+    readCloudJobReservations({
+      readJSON: async <T>() => ({
+        value: {
+          version: 1,
+          reservations: [{ id: id(1) }, { id: id(1) }],
+        } as T,
+        etag: "1",
+      }),
+    }),
+    /cannot be verified/,
+  );
+  assert.deepEqual(saved, {
+    version: 1,
+    reservations: [{ id: id(1), fingerprint }],
+  });
 });

@@ -7,7 +7,23 @@ import { startCloudRun } from "@/lib/cloud-runner";
 import { setupSchema } from "@/lib/harness";
 import { body, failure, json } from "@/lib/http";
 import { StoreError } from "@/lib/store";
+import { listCloudJobs, listReservedCloudJobs } from "@/lib/cloud-job-list";
+import { jobQuery } from "@/lib/job-query";
+export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+export async function GET(request: Request) {
+  try {
+    await automationRequest(request, "read");
+    const query = jobQuery(request.url);
+    return json(
+      query.view === "reserved"
+        ? await listReservedCloudJobs()
+        : await listCloudJobs(undefined, query),
+    );
+  } catch (error) {
+    return failure(error);
+  }
+}
 const schema = z
   .object({
     setup: setupSchema,

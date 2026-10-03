@@ -110,6 +110,62 @@ const manifest = {
 };
 const json = (value: unknown) => Buffer.from(JSON.stringify(value));
 
+test("manifest snapshots read one verified body and recheck only the relevant pointer", async () => {
+  const f = fixture();
+  await f.cloud.ingestArtifact("run", "results.json", json(manifest));
+  f.resetOperations();
+  const result = await f.cloud.readCloudRunSnapshot("run");
+  assert.equal(result.run.id, "run");
+  assert.equal(
+    result.manifestSha256,
+    createHash("sha256").update(json(manifest)).digest("hex"),
+  );
+  assert.equal(f.operations.readJSON, 2);
+  assert.equal(f.operations.readBytes, 1);
+  assert.equal(f.operations.writeBytes + f.operations.writeJSON, 0);
+
+  const originalRead = f.deps.readBytes;
+  const unrelated = createCloudArtifacts({
+    ...f.deps,
+    async readBytes(key, limit) {
+      const bytes = await originalRead(key, limit);
+      await f.cloud.ingestArtifact(
+        "run",
+        "T01/1/final.jpg",
+        Buffer.from("image"),
+      );
+      return bytes;
+    },
+  });
+  assert.equal(
+    (await unrelated.readCloudRunSnapshot("run")).manifestSha256,
+    result.manifestSha256,
+  );
+});
+
+test("manifest snapshots refuse a changed pointer and corrupt immutable bytes", async () => {
+  const f = fixture();
+  await f.cloud.ingestArtifact("run", "results.json", json(manifest));
+  const originalRead = f.deps.readBytes;
+  const racing = createCloudArtifacts({
+    ...f.deps,
+    async readBytes(key, limit) {
+      const bytes = await originalRead(key, limit);
+      await f.cloud.ingestArtifact(
+        "run",
+        "results.json",
+        json({ ...manifest, status: "interrupted" }),
+      );
+      return bytes;
+    },
+  });
+  await assert.rejects(racing.readCloudRunSnapshot("run"), status(409));
+  const index = await f.cloud.artifactIndex("run");
+  f.objects.get(index.value.files["results.json"].key)!.bytes =
+    Buffer.from("broken");
+  await assert.rejects(f.cloud.readCloudRunSnapshot("run"), status(503));
+});
+
 test("artifacts round-trip through content hashes and canonical run paths", async () => {
   const { cloud, objects } = fixture();
   const bytes = json(manifest);

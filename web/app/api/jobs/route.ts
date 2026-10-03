@@ -2,7 +2,8 @@ import { z } from "zod";
 import { cloudEnabled, readCloudRun } from "@/lib/cloud-artifacts";
 import { cloudOrigin } from "@/lib/cloud-auth";
 import { startCloudRun } from "@/lib/cloud-runner";
-import { listCloudJobs } from "@/lib/cloud-job-list";
+import { listCloudJobs, listReservedCloudJobs } from "@/lib/cloud-job-list";
+import { jobQuery } from "@/lib/job-query";
 import { setupSchema } from "@/lib/harness";
 import { body, failure, json, localRequest } from "@/lib/http";
 import { StoreError } from "@/lib/store";
@@ -18,9 +19,21 @@ const inputSchema = z
 export async function GET(request: Request) {
   try {
     localRequest(request);
+    const query = jobQuery(request.url);
     if (!cloudEnabled())
-      return json({ jobs: [], warnings: [], truncated: false });
-    return json(await listCloudJobs());
+      return json({
+        jobs: [],
+        warnings: [],
+        truncated: false,
+        ...(query.view === "reserved"
+          ? { reservations: { known: true, count: 0 } }
+          : { page: { nextCursor: null, limit: query.limit, scanned: 0 } }),
+      });
+    return json(
+      query.view === "reserved"
+        ? await listReservedCloudJobs()
+        : await listCloudJobs(undefined, query),
+    );
   } catch (e) {
     return failure(e);
   }

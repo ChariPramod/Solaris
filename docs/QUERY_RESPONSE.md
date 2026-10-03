@@ -138,6 +138,31 @@ Cooperative cancellation is a separate owner request: `POST /api/jobs/{id}/cance
 
 Sources: [jobs route](../web/app/api/jobs/route.ts), [automation launch](../web/app/api/automation/v1/jobs/route.ts), [admission](../web/lib/cloud-admission.ts), [runner](../web/lib/cloud-runner.ts), [callback validation](../web/lib/cloud-ingest.ts), [Python worker](../gauntlet/cloud_worker.py), [CI client](../scripts/solaris-ci.mjs).
 
+## Current jobs and paged history
+
+```mermaid
+flowchart TD
+    UI["Browser or read-scoped automation client"] --> Auth["Authenticate request"]
+    Auth -->|"view=reserved"| Ledger["Read validated admission reservations"]
+    Auth -->|"limit and optional cursor"| Page["List one jobs provider page"]
+    Ledger --> Current["Read reserved job IDs<br/>At most eight concurrent reads"]
+    Page --> History["Read page job IDs<br/>Isolate unavailable records"]
+    Current --> Tracking["Jobs, warnings and tracking-known flag<br/>No free-capacity claim"]
+    History --> Archive["Jobs, warnings and next cursor<br/>Provider order, locally sorted results"]
+    Tracking --> Merge["Browser retains freshest observations<br/>Keeps actionable jobs first"]
+    Archive --> Merge
+    Merge -->|"Previously active ID no longer tracked"| Direct["GET job by ID<br/>Retain last state if unavailable"]
+    Direct --> Merge
+```
+
+Owner `/api/jobs` and machine `/api/automation/v1/jobs` support history pages (default 50, limit 1–200) and a separate `?view=reserved` query. The reserved view does not accept a limit/cursor. `reservations.known: false` means current execution tracking could not be established; loaded history cannot establish idle state. Completed reservations may remain until the next admission. Reservation count is neither running count nor free capacity.
+
+Current status polling is independent of history pagination: 10 seconds while active/uncertain, 60 seconds when tracking establishes idle, with hidden-tab pause. Previously observed active jobs that disappear from reservations are reread directly. Errors retain previous observations and never imply success or stopped resources. History loads 25 entries at a time in the browser; refresh restarts its cursor. Failed or superseded page requests cannot replace the retained history. All actionable jobs remain visible ahead of a progressively revealed history; the control states how many loaded jobs remain.
+
+These reads do not initialize/prune admission state, allocate a sandbox or query provider inventory. Existing job-expiry reconciliation can persist an `interrupted` state; it does not prove worker or desktop cleanup. Normal admission continues to enforce capacity using the independent conditional ledger.
+
+Sources: [job listing](../web/lib/cloud-job-list.ts), [reservation read](../web/lib/cloud-admission.ts), [job query](../web/lib/job-query.ts), [browser reconciliation](../web/lib/job-pagination.ts), [UI](../web/components/cloud-jobs.tsx).
+
 ## Conditional workspace writes
 
 ```mermaid
@@ -211,6 +236,35 @@ Sources: [cloud assessment](../web/lib/cloud-assessment.ts), [local bridge and s
 
 The response is streamed without a `Content-Length`; the browser offers a file only after a complete successful response. Missing, corrupt, changing or oversize evidence fails the whole export. A completed archive is not a release approval. See [the bundle contract](EVIDENCE_BUNDLES.md) and [implementation](../web/lib/evidence-export.ts).
 
+## Project handoff response
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant API as Project handoff route
+    participant Projects as Project metadata
+    participant Evidence as Manifest reader
+    participant Blob as Private storage
+    Owner->>API: GET project ID, saved revision, format
+    API->>API: Authenticate and validate query
+    API->>Projects: Read project and require matching revision
+    loop Assigned IDs in batches of six
+        API->>Evidence: Capture saved manifest by ID
+        Evidence->>Blob: Read index and manifest object
+        Evidence->>Evidence: Validate size, SHA-256 and manifest
+        Evidence->>Blob: Reread manifest pointer
+        Evidence-->>API: Captured summary and digest, or unavailable
+    end
+    API->>Projects: Recheck project revision
+    alt Project changed
+        API-->>Owner: 409 before download
+    else Same project revision
+        API-->>Owner: Markdown or JSON attachment with explicit gaps
+    end
+```
+
+All assigned IDs are included regardless of loaded library pages. Each manifest is independently captured; a project-wide atomic evidence snapshot is not claimed. Unavailable/changing evidence becomes an explicit unavailable entry, while a changed project revision fails the whole download. Fields are whitelisted: private notes, prompts, screenshots, review text, credentials and raw provider exceptions do not enter this summary. The export does not run a gate, aggregate unlike success rates, write storage or start workers. See [handoff contract](PROJECT_HANDOFF_EXPORTS.md).
+
 ## Shared error contract
 
 JSON API errors use `{ "error": "user-readable message" }` with `Cache-Control: no-store`; raw SDK errors and credentials are not relayed. Callers must inspect both HTTP status and operation-specific fields such as `job.status`, `passed`, coverage and warnings.
@@ -227,4 +281,4 @@ JSON API errors use `{ "error": "user-readable message" }` with `Cache-Control: 
 | 429 | Evaluation admission full | Retry the same logical launch key after capacity is available |
 | 503 | Storage, worker, configuration or integrity cannot be verified | Preserve evidence; investigate before a new execution |
 
-The generic failure handler returns 500 for unexpected errors. A single unavailable run should produce a listing warning while other readable runs remain usable. Bounded response handling and explicit partial-state reporting are deliberate alternatives to silently returning an apparently complete result.
+The generic failure handler returns 500 for unexpected errors. A single unavailable run should produce a listing warning while other readable runs remain usable. The browser JSON helper rejects unreadable bodies even with HTTP 200, preserves cancellation causes, and never automatically retries an ambiguous write. Bounded response handling and explicit partial-state reporting avoid apparently complete results when data could not be verified.

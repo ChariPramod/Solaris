@@ -43,13 +43,13 @@ To repeat the cancellation check, privately supply `GAUNTLET_ADMIN_KEY` and `GAU
 
 ## Priority 3: complete workspace backup and restore
 
-**Delivered:** per-run streamed evidence bundles now include indexed artifacts, scoped review history, attempt context, provenance, checksums and a handoff summary. **Unfinished:** whole-workspace backup and validated restore, including presets, projects and all related runs. Local recovery and per-run bundles do not replace a complete workspace backup.
+**Delivered:** per-run streamed evidence bundles now include indexed artifacts, scoped review history, attempt context, provenance, checksums and a handoff summary. Project handoff summaries additionally cover every assigned manifest without private notes; they are metadata-only exports, not backups. **Unfinished:** whole-workspace backup and validated restore, including presets, projects and all related runs. Local recovery and per-run bundles do not replace a complete workspace backup.
 
 **Engineering acceptance:** export all referenced evidence and annotation revisions with checksums and a versioned inventory; exclude credentials; detect concurrent changes and missing objects; validate an archive before publishing a restore; refuse overwrites by default; restore into an isolated destination and compare reviews, audits and gates with the original. Exercise corrupt archives, interrupted transfers, duplicate restores and storage outages. Preserve ownership identities without restarting jobs.
 
 ## Priority 4: operational limits and cost controls
 
-**Delivered:** atomic workspace evaluation capacity and idempotent launches prevent duplicate requests and bound concurrent evaluations. Cloud run listings now support continuation pages; summary projections reduce reads, unchanged artifacts skip storage writes, and idle/hidden views reduce polling. **Unfinished:** hard spending controls, provider cost reconciliation, job/local-library pagination and retention. Assessment workers remain outside the evaluation cap.
+**Delivered:** atomic workspace evaluation capacity and idempotent launches prevent duplicate requests and bound concurrent evaluations. Cloud run listings now support continuation pages; summary projections reduce reads, unchanged artifacts skip storage writes, and idle/hidden views reduce polling. Job history now supports continuation pages in owner and automation APIs; current reservation tracking is read independently so archive limits do not hide ongoing executions. **Unfinished:** hard spending controls, provider cost reconciliation, local-library pagination and retention. Assessment workers remain outside the evaluation cap.
 
 **Engineering acceptance:** enforce an atomic global active-job limit; prevent duplicate submissions with idempotency keys; validate estimates against actual model usage and desktop fees; distinguish unknown charges; introduce explicit admission budgets before allocation. Paginate jobs/runs without silently omitting older entries. Add retention previews and protect objects referenced by retained runs or reviews before deletion.
 

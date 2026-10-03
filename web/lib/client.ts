@@ -14,9 +14,24 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
     ? AbortSignal.any([options.signal, timeout])
     : timeout;
   const response = await fetch(url, { cache: "no-store", ...options, signal });
-  const data = await response.json().catch(() => ({
-    error: "The server returned an unreadable response. Try again.",
-  }));
-  if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
-  return data;
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    // A timeout or user cancellation can also interrupt the response body.
+    signal.throwIfAborted();
+    throw new Error("The server returned an unreadable response. Try again.");
+  }
+  if (!response.ok) {
+    const message =
+      data !== null && typeof data === "object" && "error" in data
+        ? data.error
+        : undefined;
+    throw new Error(
+      typeof message === "string" && message.trim()
+        ? message
+        : "Request failed. Try again.",
+    );
+  }
+  return data as T;
 }
