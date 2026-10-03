@@ -133,6 +133,15 @@ Back up the complete private store through an authorized storage operation, incl
 
 ## Verification and production acceptance
 
+### October 2 architecture/storage iteration
+
+Source `46a0344` deployed successfully. **426 Python and 195 TypeScript tests** pass, along with lint/format, typecheck, production build, both HTTP integration checks and [GitHub CI](https://github.com/ChariPramod/Solaris/actions/runs/37093324743). Eight Mermaid diagrams passed parsing; the overall and request/response views rendered on GitHub.
+
+Real production diagnostic `cloud_f16141cd79cc35981b910c63335696ff` completed with its actual Python diagnostic gate. Acceptance traversed five pages containing ten evaluations using provider cursors, rejected an out-of-range limit, verified delivery notes/legacy update preservation/revision conflicts/archive restoration, and extracted a checksum-verified bundle with baseline evidence. Temporary API keys were revoked and rejected. Reading the new production index through the summary listing implementation required one index read and zero manifest-body reads. Older runs remained readable through the fallback.
+
+No storage deletion or model/desktop calls occurred. Live reliability remains unverified. The read-count check measures module storage operations, not global response latency or reduced retained bytes. Rollback requires a build that accepts the new optional index summary and project fields; see [architecture and compatibility](ARCHITECTURE.md).
+
+
 ### October 2 agency increment — production acceptance passed
 
 The agency-release suite passed **426 Python tests and 173 TypeScript tests**; the subsequent architecture/storage iteration passes **426 Python tests and 195 TypeScript tests** plus both HTTP integration checks. Python lint/format checks also pass. Coverage includes concurrent launch admission, same-key retries, scope restrictions, credential hashing/revocation, client project conflicts, evidence archive extraction and independent checksum verification, partial/corrupt exports, and the CI client's real gate-result contract. These local checks do not establish current production acceptance, external n8n/Zapier account connectivity, live model performance or live desktop cleanup.

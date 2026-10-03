@@ -166,3 +166,8 @@ Hosted setup allows 12 shipped tasks, 1–3 trials per task and concurrency 1–
 Worker uploads allow 2 MiB per artifact and the artifact index allows 5,000 entries. Assessment material is bounded to 128 MiB; its output is bounded to 2 MiB. Evidence bundles allow 64 MiB of captured evidence and annotations, with up to 5,000 evidence files. Client metadata allows 100 projects and 200 evaluation references per project. These are explicit product limits, not claims of unlimited archive scalability.
 
 Custom workflow authoring, tenant identity/permissions, billing, complete backup/restore, automatic retention and live provider acceptance remain separate work. See [product readiness](PRODUCT_READINESS.md) for remaining scope.
+
+
+## Verified release
+
+The architecture/storage release `46a0344` passed 621 automated tests, the production build, both HTTP integration checks and real cloud acceptance. The production archive traversed five pages with older and newly written indexes; the new summary returned a run card using one index read and zero manifest reads. Project notes, legacy updates, conflicts and reversible archive were checked against private production storage. These are diagnostic and storage checks, not live model benchmarks. [Deployment acceptance](VERCEL.md#verification-and-production-acceptance) records the exact scope and run identity.
