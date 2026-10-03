@@ -61,6 +61,8 @@ test("client projects persist separately and validate only newly assigned refere
   });
   assert.equal(project.name, "Invoice automation");
   assert.equal(project.revision, 1);
+  assert.equal(project.status, "active");
+  assert.equal(project.notes, "");
   assert.deepEqual(f.reads, ["run_a"]);
   assert.deepEqual([...f.data.keys()], [key]);
   const fresh = createClientProjects(f.storage, f.readEvidence);
@@ -136,6 +138,12 @@ test("project input validation rejects unsafe IDs, duplicates, bounds and extra 
     { ...input, client: "x".repeat(121) },
     { ...input, name: "x".repeat(81) },
     { ...input, name: "hidden\ncontrol" },
+    { ...input, status: "passed" },
+    { ...input, status: null },
+    { ...input, notes: null },
+    { ...input, notes: "x".repeat(2001) },
+    { ...input, notes: "hidden\u0000control" },
+    { ...input, notes: "hidden\u001bcontrol" },
     { ...input, runIds: Array.from({ length: 201 }, (_, i) => `run_${i}`) },
     { ...input, revision: 1 },
     { ...input, id: `project_${"a".repeat(32)}` },
@@ -144,6 +152,141 @@ test("project input validation rejects unsafe IDs, duplicates, bounds and extra 
     await assert.rejects(f.service.saveProject(value), status(400));
   assert.equal(f.data.size, 0);
   assert.equal(f.reads.length, 0);
+});
+
+test("legacy records get delivery defaults without a write; older updates preserve saved status and notes", async () => {
+  const f = fixture();
+  const now = new Date().toISOString();
+  const legacy = {
+    ...input,
+    id: `project_${"a".repeat(32)}`,
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const document = { version: 1, projects: [legacy] };
+  f.data.set(key, { value: document, etag: "legacy" });
+  const [read] = await f.service.listProjects();
+  assert.equal(read.status, "active");
+  assert.equal(read.notes, "");
+  assert.deepEqual(f.data.get(key), { value: document, etag: "legacy" });
+
+  const updated = await f.service.saveProject({
+    ...input,
+    id: legacy.id,
+    revision: 1,
+    status: "review",
+    notes: "  Confirm the invoice mapping.\nClient contact:\tSam  ",
+  });
+  assert.equal(
+    updated.notes,
+    "Confirm the invoice mapping.\nClient contact:\tSam",
+  );
+  const olderCaller = await f.service.saveProject({
+    ...input,
+    id: updated.id,
+    revision: updated.revision,
+    name: "Renamed by older caller",
+  });
+  assert.equal(olderCaller.status, "review");
+  assert.equal(olderCaller.notes, updated.notes);
+  assert.equal(olderCaller.createdAt, now);
+  assert.deepEqual(f.reads, []);
+});
+
+test("delivery status changes and note edits are independent, bounded and reversible without evidence writes", async () => {
+  const f = fixture();
+  let project = await f.service.saveProject({
+    ...input,
+    notes: "x".repeat(2000),
+    status: "delivered",
+  });
+  f.missing("run_a");
+  for (const delivery of [
+    "archived",
+    "active",
+    "review",
+    "delivered",
+  ] as const) {
+    project = await f.service.saveProject({
+      ...input,
+      id: project.id,
+      revision: project.revision,
+      status: delivery,
+    });
+    assert.equal(project.status, delivery);
+    assert.equal(project.notes.length, 2000);
+    assert.deepEqual(project.runIds, ["run_a"]);
+  }
+  const cleared = await f.service.saveProject({
+    ...input,
+    id: project.id,
+    revision: project.revision,
+    notes: "",
+  });
+  assert.equal(cleared.notes, "");
+  assert.equal(cleared.status, "delivered");
+  assert.deepEqual(f.reads, ["run_a"]);
+  assert.deepEqual([...f.data.keys()], [key]);
+});
+
+test("concurrent delivery edits reject stale revisions and preserve the entire winning revision", async () => {
+  const f = fixture();
+  const project = await f.service.saveProject(input);
+  const changes = [
+    { status: "review", notes: "Waiting for client review" },
+    { status: "archived", notes: "Engagement paused" },
+  ];
+  const results = await Promise.allSettled(
+    changes.map((change) =>
+      f.service.saveProject({
+        ...input,
+        id: project.id,
+        revision: 1,
+        ...change,
+      }),
+    ),
+  );
+  const successes = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  assert.equal(successes.length, 1);
+  assert.equal(
+    results.filter(
+      (result) => result.status === "rejected" && status(409)(result.reason),
+    ).length,
+    1,
+  );
+  assert.deepEqual(await f.service.listProjects(), successes);
+  await assert.rejects(
+    f.service.saveProject({
+      ...input,
+      id: project.id,
+      revision: 1,
+      status: "delivered",
+      notes: "Stale draft",
+    }),
+    status(409),
+  );
+  assert.deepEqual(await f.service.listProjects(), successes);
+});
+
+test("malformed stored delivery metadata fails closed instead of silently resetting progress", async () => {
+  const f = fixture();
+  const project = await f.service.saveProject(input);
+  for (const change of [
+    { status: "passed" },
+    { status: null },
+    { notes: null },
+    { notes: "x".repeat(2001) },
+    { notes: "hidden\u0000control" },
+  ]) {
+    const document = { version: 1, projects: [{ ...project, ...change }] };
+    f.data.set(key, { value: document, etag: "corrupt" });
+    await assert.rejects(f.service.listProjects(), status(503));
+    await assert.rejects(f.service.saveProject(input), status(503));
+    assert.deepEqual(f.data.get(key)?.value, document);
+  }
 });
 
 test("corrupt metadata is preserved and project limit is enforced", async () => {

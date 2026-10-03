@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { api } from "@/lib/client";
 import { dateLabel, prettyName } from "@/lib/domain";
+import { jobLibrarySignature, jobPollingDelay } from "@/lib/job-polling";
 import type { PublicCloudJob } from "@/lib/cloud-runner";
 import type { CloudJobList } from "@/lib/cloud-job-list";
 
@@ -38,7 +39,6 @@ export function CloudJobs({
       setJobs((previous) =>
         previous.map((job) => (job.id === id ? updated : job)),
       );
-      setRefresh((value) => value + 1);
     } catch (error) {
       setStopErrors((errors) => ({
         ...errors,
@@ -46,38 +46,75 @@ export function CloudJobs({
       }));
     } finally {
       setStopping((ids) => ids.filter((value) => value !== id));
+      // A failed response can still mean the stop was accepted. Re-read status;
+      // never replay cancellation automatically.
+      setRefresh((value) => value + 1);
     }
   }
   const signature = useRef("");
+  const pollingDelay = useRef(jobPollingDelay(null));
   useEffect(() => {
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let disposed = false;
+    let request: AbortController | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let refreshAfterRequest = false;
+    function clearTimer() {
+      clearTimeout(timer);
+      timer = undefined;
+    }
     async function poll() {
+      clearTimer();
+      if (disposed || document.hidden) return;
+      if (request) {
+        // Visibility may return before the hidden request has finished aborting.
+        refreshAfterRequest = true;
+        return;
+      }
+      const abort = new AbortController();
+      request = abort;
       try {
         const data = await api<CloudJobList>("/api/jobs", {
           signal: abort.signal,
         });
-        if (abort.signal.aborted) return;
-        const next = JSON.stringify(
-          data.jobs.map((job) => [job.id, job.updatedAt, job.status]),
-        );
+        if (disposed || abort.signal.aborted) return;
+        const next = jobLibrarySignature(data.jobs);
         if (signature.current && next !== signature.current) onChange();
         signature.current = next;
+        pollingDelay.current = jobPollingDelay(data);
         setJobs(data.jobs);
         setWarnings(data.warnings ?? []);
         setTruncated(data.truncated ?? false);
         setLoaded(true);
         setError("");
       } catch (e) {
-        if (!abort.signal.aborted) setError((e as Error).message);
+        if (!disposed && !abort.signal.aborted) {
+          pollingDelay.current = jobPollingDelay(null);
+          setError((e as Error).message);
+        }
       } finally {
-        if (!abort.signal.aborted) timer = setTimeout(poll, 10_000);
+        request = null;
+        if (!disposed && !document.hidden) {
+          if (refreshAfterRequest) {
+            refreshAfterRequest = false;
+            void poll();
+          } else timer = setTimeout(poll, pollingDelay.current);
+        }
       }
     }
+    function visibilityChanged() {
+      clearTimer();
+      if (document.hidden) {
+        refreshAfterRequest = false;
+        request?.abort();
+      } else void poll();
+    }
+    document.addEventListener("visibilitychange", visibilityChanged);
     void poll();
     return () => {
-      abort.abort();
-      clearTimeout(timer);
+      disposed = true;
+      request?.abort();
+      clearTimer();
+      document.removeEventListener("visibilitychange", visibilityChanged);
     };
   }, [revision, refresh, onChange]);
   return (
@@ -102,6 +139,10 @@ export function CloudJobs({
       <p className="mb-4 text-sm text-muted-foreground">
         Workers continue after you close this page. Evidence appears as it is
         saved. Job completion does not mean every task passed.
+      </p>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Status refreshes every 10 seconds while jobs are active and every minute
+        when idle. Automatic refresh pauses while this tab is hidden.
       </p>
       {error && (
         <p role="alert" className="mb-3 text-sm text-destructive">

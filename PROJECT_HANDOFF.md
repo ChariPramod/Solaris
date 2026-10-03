@@ -2,6 +2,16 @@
 
 Updated October 2, 2026. This is the practical handoff for the Solaris project, whose implemented evaluation harness is named **Gauntlet**.
 
+## Architecture, storage and delivery iteration
+
+Added [overall architecture diagrams](docs/ARCHITECTURE.md) and [query/response diagrams](docs/QUERY_RESPONSE.md), tracing authentication, cloud/local reads, workers, callbacks, conditional edits, gates and exports. The diagrams link directly to their implementations.
+
+Cloud manifests now parse in memory; trial detail reads one captured index; new manifest indexes retain a validated digest-bound summary for library queries. Cloud library requests support continuation pages and the browser can load more while retaining prior results on failure. Exact duplicate artifact uploads skip byte/index writes. Concurrent reads of identical immutable content can share a transfer; authentication and mutable metadata always remain fresh. Jobs poll every 10 seconds while active, every minute when confirmed idle, and pause in hidden tabs.
+
+Client projects now support manual delivery status, private notes, reversible archive and search. Older project records and omitted update fields remain compatible. Delivery status does not change machine evidence or quality gates. Old pre-feature deployments may reject the added metadata fields; use compatible readers for rollback. No automatic deletion, compression, spending cap, full restore or global chronological index is claimed.
+
+Local validation passed: 426 Python tests and 195 TypeScript tests (621 total), lint/format, typecheck, production build, real local HTTP integration and a streamed 6.3 MB evidence archive with extracted checksums. All eight Mermaid diagrams parsed successfully and relative source links were checked. Current production acceptance is pending this deployment. The owner still needs live provider configuration/validation and client-specific task scope; this iteration requires no storage migration or external account reconnection.
+
 ## Agency product increment
 
 Added client projects, reusable workflow templates, honest analytics, streaming per-run evidence exports, a scoped automation API and GitHub Actions runner, n8n/Zapier HTTP connection recipes, atomic workspace evaluation admission and retry-safe launches. See [AGENCY_RELEASE.md](docs/AGENCY_RELEASE.md) for exact capabilities, limitations and the remaining owner setup, and [INTEGRATIONS.md](docs/INTEGRATIONS.md) for credential handling and API contracts. Projects are organizational metadata, not client authentication. No automated external client communication is enabled.

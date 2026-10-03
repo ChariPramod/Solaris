@@ -13,7 +13,12 @@ import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { api } from "@/lib/client";
 import { dateLabel } from "@/lib/domain";
-import type { ClientProject } from "@/lib/client-project-types";
+import {
+  CLIENT_PROJECT_STATUSES,
+  CLIENT_PROJECT_STATUS_LABELS,
+  type ClientProject,
+  type ClientProjectStatus,
+} from "@/lib/client-project-types";
 import type { RunCard } from "@/lib/types";
 
 export function ClientProjects({
@@ -27,8 +32,14 @@ export function ClientProjects({
   const [current, setCurrent] = useState<ClientProject | null>(null);
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
+  const [status, setStatus] = useState<ClientProjectStatus>("active");
+  const [notes, setNotes] = useState("");
   const [runIds, setRunIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ClientProjectStatus | "all">(
+    "all",
+  );
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -36,6 +47,27 @@ export function ClientProjects({
   const [message, setMessage] = useState("");
   const editorRef = useRef<HTMLFormElement>(null);
   const byId = useMemo(() => new Map(runs.map((run) => [run.id, run])), [runs]);
+  const searchedProjects = useMemo(() => {
+    const query = projectSearch.trim().toLowerCase();
+    return projects.filter((project) =>
+      `${project.name} ${project.client} ${project.notes}`
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [projects, projectSearch]);
+  const statusCounts = useMemo(() => {
+    const counts: Record<ClientProjectStatus, number> = {
+      active: 0,
+      review: 0,
+      delivered: 0,
+      archived: 0,
+    };
+    for (const project of searchedProjects) counts[project.status]++;
+    return counts;
+  }, [searchedProjects]);
+  const visibleProjects = searchedProjects.filter(
+    (project) => statusFilter === "all" || project.status === statusFilter,
+  );
   const visibleRuns = useMemo(
     () =>
       runs
@@ -72,6 +104,8 @@ export function ClientProjects({
     setCurrent(project);
     setName(project?.name ?? "");
     setClient(project?.client ?? "");
+    setStatus(project?.status ?? "active");
+    setNotes(project?.notes ?? "");
     setRunIds(project?.runIds ?? []);
     setSearch("");
     setError("");
@@ -106,6 +140,8 @@ export function ClientProjects({
           revision: current?.revision ?? 0,
           name,
           client,
+          status,
+          notes,
           runIds,
         }),
       });
@@ -116,6 +152,8 @@ export function ClientProjects({
       setCurrent(saved);
       setName(saved.name);
       setClient(saved.client);
+      setStatus(saved.status);
+      setNotes(saved.notes);
       setRunIds(saved.runIds);
       setMessage(
         `Saved ${saved.name}, revision ${saved.revision}. Original evaluation evidence is unchanged.`,
@@ -147,9 +185,8 @@ export function ClientProjects({
             Keep each engagement’s evidence together.
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Group saved evaluations by client and project. Assignments reference
-            the original runs, so trial evidence and verifier outcomes remain
-            intact.
+            Group saved evaluations by client and project, track delivery, and
+            keep handoff notes beside the original evidence.
           </p>
         </div>
         <Button
@@ -206,6 +243,44 @@ export function ClientProjects({
               New project
             </Button>
           </div>
+          {loaded && projects.length > 0 && (
+            <div className="space-y-3 rounded-xl border bg-card p-3">
+              <label className="block space-y-2 text-sm">
+                <span>Search projects</span>
+                <Input
+                  value={projectSearch}
+                  onChange={(event) => setProjectSearch(event.target.value)}
+                  placeholder="Project, client, or handoff notes"
+                />
+              </label>
+              <label className="block space-y-2 text-sm">
+                <span>Delivery status</span>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={statusFilter}
+                  onChange={(event) =>
+                    setStatusFilter(
+                      event.target.value as ClientProjectStatus | "all",
+                    )
+                  }
+                >
+                  <option value="all">
+                    All statuses ({searchedProjects.length})
+                  </option>
+                  {CLIENT_PROJECT_STATUSES.map((value) => (
+                    <option key={value} value={value}>
+                      {CLIENT_PROJECT_STATUS_LABELS[value]} (
+                      {statusCounts[value]})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs text-muted-foreground" role="status">
+                {visibleProjects.length} of {projects.length} projects shown.
+                Counts reflect your search.
+              </p>
+            </div>
+          )}
           {loaded && !projects.length && (
             <div className="rounded-xl border border-dashed p-6">
               <FolderKanban
@@ -221,7 +296,13 @@ export function ClientProjects({
               </p>
             </div>
           )}
-          {projects.map((project) => {
+          {loaded && projects.length > 0 && !visibleProjects.length && (
+            <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+              No projects match this search and delivery status. Your editor
+              draft is still available.
+            </p>
+          )}
+          {visibleProjects.map((project) => {
             const savedRuns = project.runIds.flatMap((id) =>
               byId.has(id) ? [byId.get(id)!] : [],
             );
@@ -239,8 +320,20 @@ export function ClientProjects({
                       {project.name}
                     </h4>
                   </div>
-                  <Badge variant="outline">rev {project.revision}</Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <Badge variant="secondary">
+                      {CLIENT_PROJECT_STATUS_LABELS[project.status]}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      Manual · rev {project.revision}
+                    </span>
+                  </div>
                 </div>
+                {project.notes && (
+                  <p className="mt-3 line-clamp-3 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {project.notes}
+                  </p>
+                )}
                 <p className="mt-3 text-xs text-muted-foreground">
                   {project.runIds.length} assigned ·{" "}
                   {savedRuns.filter((run) => run.mode === "live").length} live ·{" "}
@@ -329,6 +422,50 @@ export function ClientProjects({
                 placeholder="Invoice intake automation"
                 autoComplete="off"
               />
+            </label>
+            <label className="block space-y-2 text-sm">
+              <span>Manual delivery status</span>
+              <select
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={status}
+                aria-describedby="project-status-help"
+                onChange={(event) =>
+                  setStatus(event.target.value as ClientProjectStatus)
+                }
+              >
+                {CLIENT_PROJECT_STATUSES.map((value) => (
+                  <option key={value} value={value}>
+                    {CLIENT_PROJECT_STATUS_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+              <span
+                id="project-status-help"
+                className="block text-xs leading-relaxed text-muted-foreground"
+              >
+                Status records your delivery progress. It does not certify an
+                automation or change evaluation results. Archived projects
+                retain all assignments and can return to any status.
+              </span>
+            </label>
+            <label className="block space-y-2 text-sm">
+              <span>Handoff notes</span>
+              <textarea
+                className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                maxLength={2000}
+                rows={4}
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Open questions, delivery scope, and next steps for this client."
+                aria-describedby="project-notes-help"
+              />
+              <span
+                id="project-notes-help"
+                className="block text-xs text-muted-foreground"
+              >
+                {notes.length}/2,000 characters · Private workspace notes; avoid
+                credentials.
+              </span>
             </label>
             <div>
               <h4 className="text-sm font-medium">

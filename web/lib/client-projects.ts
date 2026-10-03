@@ -3,7 +3,10 @@ import { z } from "zod";
 import * as storage from "./cloud-storage";
 import { readCloudRun } from "./cloud-artifacts";
 import { StoreError } from "./store";
-import type { ClientProject } from "./client-project-types";
+import {
+  CLIENT_PROJECT_STATUSES,
+  type ClientProject,
+} from "./client-project-types";
 
 const KEY = "workspace/client-projects.json";
 const projectId = z.string().regex(/^project_[a-f0-9]{32}$/);
@@ -18,12 +21,23 @@ const runIds = z
   .array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/))
   .max(200)
   .refine((ids) => new Set(ids).size === ids.length);
+const deliveryStatus = z.enum(CLIENT_PROJECT_STATUSES);
+const notes = z
+  .string()
+  .trim()
+  .max(2000)
+  .refine(
+    (value) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value),
+  );
 const inputSchema = z
   .object({
     id: projectId.optional(),
     revision: z.number().int().nonnegative(),
     name: text(80),
     client: text(120),
+    // Optional for older callers. Missing update fields preserve the saved value.
+    status: deliveryStatus.optional(),
+    notes: notes.optional(),
     runIds,
   })
   .strict()
@@ -34,6 +48,9 @@ const savedSchema = z
     revision: z.number().int().positive(),
     name: text(80),
     client: text(120),
+    // Version-1 project records predate delivery tracking; migrate on read.
+    status: deliveryStatus.default("active"),
+    notes: notes.default(""),
     runIds,
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -78,7 +95,7 @@ export function createClientProjects(
     const parsed = inputSchema.safeParse(raw);
     if (!parsed.success)
       throw new StoreError(
-        "Check the project name, client, selected evaluations, and revision.",
+        "Check the project name, client, delivery status, notes (up to 2,000 characters), selected evaluations, and revision.",
         400,
       );
     const input = parsed.data;
@@ -120,6 +137,8 @@ export function createClientProjects(
       revision: (current?.revision ?? 0) + 1,
       name: input.name,
       client: input.client,
+      status: input.status ?? current?.status ?? "active",
+      notes: input.notes ?? current?.notes ?? "",
       runIds: input.runIds,
       createdAt: current?.createdAt ?? now,
       updatedAt: now,

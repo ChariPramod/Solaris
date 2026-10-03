@@ -7,8 +7,10 @@ import * as storage from "./cloud-storage";
 export type ArtifactStorage = Pick<
   typeof storage,
   "readJSON" | "writeJSON" | "readBytes" | "writeBytes" | "listKeys"
->;
-import { readRun, validId, parseActions, StoreError } from "./store";
+> &
+  Partial<Pick<typeof storage, "listKeyPage">>;
+import { parseRun, validId, parseActions, StoreError } from "./store";
+import { buildCloudRunSummary, readCloudRunSummary } from "./cloud-run-summary";
 import { summarizeRun } from "./domain";
 import type { Library, TrialDetail } from "./types";
 export const cloudEnabled = () => process.env.GAUNTLET_STORAGE === "vercel";
@@ -32,6 +34,9 @@ const indexSchema = z
       .record(z.string().regex(artifactPath), fileSchema)
       .refine((files) => Object.keys(files).length <= 5000),
     updatedAt: z.string(),
+    // This projection is a disposable optimization, not evidence. Bad summaries
+    // fall back to the checksum-verified manifest rather than invalidating it.
+    runSummary: z.unknown().optional(),
   })
   .strict();
 export function createCloudArtifacts(deps: ArtifactStorage = storage) {
@@ -68,37 +73,54 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
       throw new StoreError("Artifact exceeds upload limit.", 413);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const key = `artifacts/${id}/${sha256}`;
-    try {
-      await writeBytes(
-        key,
-        bytes,
-        name.endsWith(".jpg") ? "image/jpeg" : "application/octet-stream",
-      );
-    } catch (e) {
-      if (!(e instanceof StoreError) || e.status !== 409) throw e;
-    }
+    const indexKey = `indexes/${id}.json`;
+    let saved = await readJSON<unknown>(indexKey);
+    let wroteBytes = false;
     for (let attempt = 0; attempt < 4; attempt++) {
-      const saved = await readJSON<unknown>(`indexes/${id}.json`);
       const value = saved
         ? parseIndex(id, saved.value)
         : {
             version: 1 as const,
-            files: {},
+            files: {} as Record<string, z.infer<typeof fileSchema>>,
             updatedAt: new Date().toISOString(),
+            runSummary: undefined as unknown,
           };
-      if (Object.keys(value.files).length >= 5000 && !value.files[name])
+      const existing = value.files[name];
+      if (
+        existing?.key === key &&
+        existing.sha256 === sha256 &&
+        existing.size === bytes.length
+      )
+        return;
+      if (Object.keys(value.files).length >= 5000 && !existing)
         throw new StoreError("Artifact collection limit reached.", 413);
+      if (!wroteBytes) {
+        try {
+          await writeBytes(
+            key,
+            bytes,
+            name.endsWith(".jpg") ? "image/jpeg" : "application/octet-stream",
+          );
+        } catch (e) {
+          if (!(e instanceof StoreError) || e.status !== 409) throw e;
+        }
+        wroteBytes = true;
+      }
       value.files[name] = { key, sha256, size: bytes.length };
+      if (name === "results.json")
+        value.runSummary = buildCloudRunSummary(id, sha256, bytes);
       value.updatedAt = new Date().toISOString();
       try {
-        await writeJSON(`indexes/${id}.json`, value, saved?.etag ?? null);
+        await writeJSON(indexKey, value, saved?.etag ?? null);
         return;
       } catch (e) {
         if (!(e instanceof StoreError) || e.status !== 409 || attempt === 3)
           throw e;
+        saved = await readJSON<unknown>(indexKey);
       }
     }
   }
+
   async function bytesFromIndex(
     entry: z.infer<typeof fileSchema>,
     limit: number,
@@ -180,13 +202,41 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
       await rm(root, { recursive: true, force: true });
     }
   }
-  async function readCloudRun(id: string) {
-    return withEvidenceProject([id], (root) =>
-      readRun(id, path.join(root, "results")),
-    );
+  async function runFromIndex(id: string, index: z.infer<typeof indexSchema>) {
+    const manifest = index.files["results.json"];
+    if (!manifest)
+      throw new StoreError("Saved manifest is not available yet.", 404);
+    try {
+      const bytes = await bytesFromIndex(manifest, 16 * 1024 * 1024);
+      return parseRun(id, JSON.parse(bytes.toString("utf8")));
+    } catch (error) {
+      if (error instanceof StoreError) throw error;
+      throw new StoreError(
+        "Run cannot be read. It may be missing, incomplete, or malformed.",
+        404,
+      );
+    }
   }
-  async function listCloudRuns(): Promise<Library> {
-    const index = await listKeys("indexes/", 200);
+  async function readCloudRun(id: string) {
+    return runFromIndex(id, (await artifactIndex(id)).value);
+  }
+  async function listCloudRuns(options?: {
+    limit: number;
+    cursor?: string;
+  }): Promise<Library> {
+    if (
+      options &&
+      (!Number.isInteger(options.limit) ||
+        options.limit < 1 ||
+        options.limit > 200)
+    )
+      throw new StoreError("Run page limit must be between 1 and 200.");
+    if (options && !deps.listKeyPage)
+      throw new StoreError("Paged run storage is unavailable.", 503);
+    const page = options
+      ? await deps.listKeyPage!("indexes/", options.limit, options.cursor)
+      : null;
+    const index = page ?? (await listKeys("indexes/", 200));
     const runs: Library["runs"] = [];
     const warnings: string[] = [];
     for (let offset = 0; offset < index.keys.length; offset += 8)
@@ -194,7 +244,12 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
         index.keys.slice(offset, offset + 8).map(async (key) => {
           const id = key.slice("indexes/".length).replace(/\.json$/, "");
           try {
-            runs.push(summarizeRun(await readCloudRun(id)));
+            const index = (await artifactIndex(id)).value;
+            const manifest = index.files["results.json"];
+            const summary = manifest
+              ? readCloudRunSummary(id, manifest.sha256, index.runSummary)
+              : null;
+            runs.push(summary ?? summarizeRun(await runFromIndex(id, index)));
           } catch {
             warnings.push(
               `${id}: saved manifest is not available yet. Check its job status.`,
@@ -202,13 +257,23 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
           }
         }),
       );
-    if (index.truncated) warnings.push("Showing the first 200 saved runs.");
+    if ("truncated" in index && index.truncated)
+      warnings.push("Showing the first 200 saved runs.");
     runs.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return {
       runs,
       warnings,
       source: "cloud",
       scannedAt: new Date().toISOString(),
+      ...(page && options
+        ? {
+            page: {
+              nextCursor: page.nextCursor,
+              limit: options.limit,
+              scanned: page.keys.length,
+            },
+          }
+        : {}),
     };
   }
   async function readCloudTrial(
@@ -218,7 +283,8 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
   ): Promise<TrialDetail> {
     if (!/^T\d{2}$/.test(task) || !Number.isSafeInteger(trial) || trial < 1)
       throw new StoreError("Invalid trial identifier.");
-    const run = await readCloudRun(id);
+    const index = await artifactIndex(id);
+    const run = await runFromIndex(id, index.value);
     const record = run.records.find(
       (r) => r.task_id === task && r.trial === trial,
     );
@@ -226,21 +292,16 @@ export function createCloudArtifacts(deps: ArtifactStorage = storage) {
     let frames: TrialDetail["frames"] = [],
       warnings: string[] = [];
     try {
+      const actions = index.value.files[`${task}/${trial}/actions.jsonl`];
+      if (!actions) throw new StoreError("Action history is missing.", 404);
       ({ frames, warnings } = parseActions(
-        (
-          await readCloudArtifact(
-            id,
-            `${task}/${trial}/actions.jsonl`,
-            4 * 1024 * 1024,
-          )
-        ).toString(),
+        (await bytesFromIndex(actions, 4 * 1024 * 1024)).toString("utf8"),
       ));
     } catch {
       warnings.push(
         "Action history is missing or unreadable. Saved results remain available.",
       );
     }
-    const index = await artifactIndex(id);
     const names = new Set([
       ...frames
         .map((f) => f.screenshot)

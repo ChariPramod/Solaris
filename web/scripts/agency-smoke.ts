@@ -125,6 +125,36 @@ async function main() {
     assert.equal(evaluation.exitCode, 0);
     const run = await machine(`/runs/${job.id}`, runner.secret);
     assert.equal(run.records.length, 2);
+    const listed = new Set<string>();
+    const cursors = new Set<string>();
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const query = `/runs?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const page = await machine(query, reader.secret);
+      assert.equal(page.page.limit, 2);
+      assert.ok(page.page.scanned <= 2);
+      for (const card of page.runs) {
+        listed.add(card.id);
+        if (card.id === job.id) assert.equal(card.recorded, run.records.length);
+      }
+      cursor = page.page.nextCursor;
+      if (cursor) {
+        assert.ok(!cursors.has(cursor), "Continuation cursor repeated.");
+        cursors.add(cursor);
+      }
+      assert.ok(++pages <= 100, "Acceptance archive exceeded its scan bound.");
+    } while (cursor);
+    assert.ok(
+      listed.has(job.id),
+      "The new evaluation is missing from the paged archive.",
+    );
+    const ownerPage = await owner("/api/runs?limit=1");
+    assert.equal(ownerPage.page.limit, 1);
+    await owner("/api/runs?limit=201", undefined, 400);
+    console.log(
+      `Cloud archive traversed safely: ${pages} pages, ${listed.size} evaluations.`,
+    );
     const jobs = await owner("/api/jobs");
     const savedJob = jobs.jobs.find((value: any) => value.id === job.id);
     assert.equal(savedJob.status, "complete");
@@ -138,6 +168,8 @@ async function main() {
       name: "Agency release acceptance",
       client: "Solaris internal validation",
       runIds: [job.id],
+      status: "review",
+      notes: "Internal delivery validation. Diagnostic evidence only.",
     });
     assert.equal(project.revision, 1);
     assert.ok(
@@ -152,8 +184,26 @@ async function main() {
       client: project.client,
       runIds: [job.id],
     };
-    assert.equal((await owner("/api/projects", update)).revision, 2);
+    // Older request bodies must preserve delivery fields they do not know about.
+    const legacyUpdate = await owner("/api/projects", update);
+    assert.equal(legacyUpdate.revision, 2);
+    assert.equal(legacyUpdate.status, "review");
+    assert.equal(legacyUpdate.notes, project.notes);
     await owner("/api/projects", update, 409);
+    const archived = await owner("/api/projects", {
+      ...update,
+      revision: 2,
+      status: "archived",
+    });
+    assert.equal(archived.status, "archived");
+    const restored = await owner("/api/projects", {
+      ...update,
+      revision: 3,
+      status: "review",
+    });
+    assert.equal(restored.revision, 4);
+    assert.equal(restored.notes, project.notes);
+    assert.deepEqual(restored.runIds, [job.id]);
     const bundle = await fetch(`${origin}/api/runs/${job.id}/bundle`, {
       headers: { cookie },
       redirect: "error",

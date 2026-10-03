@@ -417,3 +417,141 @@ test("empty and complete listings succeed; stalled or out-of-prefix listings fai
     await assert.rejects(storage.listKeys("runs/"), status(503));
   }
 });
+
+test("one-page listings preserve provider continuation without scanning ahead", async () => {
+  const calls: Array<{ cursor?: string; limit?: number }> = [];
+  const storage = createCloudStorage(
+    sdk({
+      list: (async (options: { cursor?: string; limit?: number }) => {
+        calls.push(options);
+        return options.cursor === "page-two"
+          ? { blobs: [listed("indexes/z.json")], hasMore: false }
+          : {
+              blobs: [listed("indexes/a.json")],
+              hasMore: true,
+              cursor: "page-two",
+            };
+      }) as CloudStorageSDK["list"],
+    }),
+  );
+  assert.deepEqual(await storage.listKeyPage("indexes/", 1), {
+    keys: ["indexes/a.json"],
+    nextCursor: "page-two",
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(await storage.listKeyPage("indexes/", 1, "page-two"), {
+    keys: ["indexes/z.json"],
+    nextCursor: null,
+  });
+  assert.deepEqual(
+    calls.map(({ limit, cursor }) => [limit, cursor]),
+    [
+      [1, undefined],
+      [1, "page-two"],
+    ],
+  );
+});
+
+test("page requests validate bounds and reject unsafe provider continuations", async () => {
+  let calls = 0;
+  const storage = createCloudStorage(
+    sdk({
+      list: (async () => {
+        calls++;
+        return { blobs: [], hasMore: false };
+      }) as CloudStorageSDK["list"],
+    }),
+  );
+  for (const limit of [0, 201, 1.5, NaN])
+    await assert.rejects(storage.listKeyPage("indexes/", limit), status(400));
+  for (const cursor of ["", "a\nb", "x".repeat(4097)])
+    await assert.rejects(
+      storage.listKeyPage("indexes/", 50, cursor),
+      status(400),
+    );
+  assert.equal(calls, 0);
+  for (const page of [
+    { blobs: [], hasMore: true, cursor: "next" },
+    { blobs: [listed("indexes/a")], hasMore: true, cursor: 123 },
+    { blobs: [listed("indexes/a")], hasMore: true, cursor: "repeat" },
+    { blobs: [listed("indexes/a")], hasMore: true, cursor: "bad\ncursor" },
+    { blobs: [listed("jobs/a")], hasMore: false },
+    { blobs: [listed("indexes/a"), listed("indexes/a")], hasMore: false },
+  ]) {
+    const invalid = createCloudStorage(
+      sdk({ list: (async () => page) as CloudStorageSDK["list"] }),
+    );
+    await assert.rejects(
+      invalid.listKeyPage("indexes/", 2, "repeat"),
+      status(503),
+    );
+  }
+});
+
+test("concurrent immutable reads share one transfer but independent buffers, without retaining cached bytes", async () => {
+  let calls = 0;
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const storage = createCloudStorage(
+    sdk({
+      get: async () => {
+        calls++;
+        await ready;
+        return response(Buffer.from("evidence"));
+      },
+    }),
+  );
+  const key = `artifacts/run_one/${"a".repeat(64)}`;
+  const first = storage.readBytes(key, 100),
+    second = storage.readBytes(key, 100);
+  assert.equal(calls, 1);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  a[0] = 0;
+  assert.equal(b.toString(), "evidence");
+  assert.equal((await storage.readBytes(key, 100)).toString(), "evidence");
+  assert.equal(calls, 2);
+});
+
+test("failed immutable reads are retryable; byte limits and mutable metadata reads remain independent", async () => {
+  let calls = 0;
+  let reject!: (error: Error) => void;
+  const failure = new Promise<void>((_, r) => {
+    reject = r;
+  });
+  const key = `artifacts/run_one/${"a".repeat(64)}`;
+  const storage = createCloudStorage(
+    sdk({
+      get: async () => {
+        if (++calls === 1) await failure;
+        return response(Buffer.from("{}"));
+      },
+    }),
+  );
+  const a = storage.readBytes(key, 100),
+    b = storage.readBytes(key, 100);
+  reject(new Error("provider unavailable"));
+  const result = await Promise.allSettled([a, b]);
+  assert.ok(
+    result.every(
+      (value) => value.status === "rejected" && status(503)(value.reason),
+    ),
+  );
+  assert.equal(calls, 1);
+  await storage.readBytes(key, 100);
+  assert.equal(calls, 2);
+  const bounded = await Promise.allSettled([
+    storage.readBytes(key, 1),
+    storage.readBytes(key, 100),
+  ]);
+  assert.equal(bounded[0].status, "rejected");
+  assert.equal(bounded[1].status, "fulfilled");
+  assert.equal(calls, 4);
+  await Promise.all([
+    storage.readJSON("workspace/project.json"),
+    storage.readJSON("workspace/project.json"),
+  ]);
+  assert.equal(calls, 6);
+});

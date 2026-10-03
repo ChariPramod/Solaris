@@ -86,6 +86,7 @@ import {
 } from "@/lib/domain";
 import { registerWorkspaceTools } from "@/lib/webmcp";
 import { api } from "@/lib/client";
+import { mergeLibrary } from "@/lib/library-pagination";
 import { TrialEvidence } from "@/components/trial-evidence";
 import { RunAssessment } from "@/components/run-assessment";
 import { SavedSetups } from "@/components/saved-setups";
@@ -171,6 +172,10 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const libraryRequest = useRef(0);
+  const libraryController = useRef<AbortController | null>(null);
   const [view, setView] = useState<
     | "runs"
     | "tasks"
@@ -192,24 +197,72 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
   const [jobsRevision, setJobsRevision] = useState(0);
   const mounted = useRef(true);
   const refresh = useCallback(async () => {
+    const version = ++libraryRequest.current;
+    libraryController.current?.abort();
+    const controller = new AbortController();
+    libraryController.current = controller;
     setRefreshing(true);
+    setLoadingMore(false);
+    setPageError("");
     try {
-      const data = await api<Library>("/api/runs");
-      if (mounted.current) {
+      const data = await api<Library>("/api/runs?limit=50", {
+        signal: controller.signal,
+      });
+      if (mounted.current && version === libraryRequest.current) {
         setLibrary(data);
         setError("");
       }
     } catch (e) {
-      if (mounted.current) setError((e as Error).message);
+      if (
+        mounted.current &&
+        !controller.signal.aborted &&
+        version === libraryRequest.current
+      )
+        setError((e as Error).message);
     } finally {
-      if (mounted.current) setRefreshing(false);
+      if (mounted.current && version === libraryRequest.current)
+        setRefreshing(false);
     }
   }, []);
+  async function loadMore() {
+    const cursor = library?.page?.nextCursor;
+    if (!cursor || loadingMore || refreshing) return;
+    const version = ++libraryRequest.current;
+    libraryController.current?.abort();
+    const controller = new AbortController();
+    libraryController.current = controller;
+    setLoadingMore(true);
+    setPageError("");
+    try {
+      const data = await api<Library>(
+        `/api/runs?limit=50&cursor=${encodeURIComponent(cursor)}`,
+        { signal: controller.signal },
+      );
+      if (data.page?.nextCursor === cursor)
+        throw new Error(
+          "The archive did not advance. Refresh the library before continuing.",
+        );
+      if (mounted.current && version === libraryRequest.current) {
+        setLibrary((current) => (current ? mergeLibrary(current, data) : data));
+      }
+    } catch (e) {
+      if (
+        mounted.current &&
+        !controller.signal.aborted &&
+        version === libraryRequest.current
+      )
+        setPageError((e as Error).message);
+    } finally {
+      if (mounted.current && version === libraryRequest.current)
+        setLoadingMore(false);
+    }
+  }
   useEffect(() => {
     mounted.current = true;
     void refresh();
     return () => {
       mounted.current = false;
+      libraryController.current?.abort();
     };
   }, [refresh]);
   useEffect(() => {
@@ -220,7 +273,15 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
   useEffect(
     () =>
       registerWorkspaceTools({
-        list: () => api<Library>("/api/runs"),
+        list: (options) => {
+          const params = new URLSearchParams({
+            limit: String(options?.limit ?? 50),
+          });
+          if (options?.cursor !== undefined)
+            params.set("cursor", options.cursor);
+          return api<Library>(`/api/runs?${params}`);
+        },
+        read: (id) => api<Run>(`/api/runs/${encodeURIComponent(id)}`),
         open: (id) => {
           setView("runs");
           setSelected(id);
@@ -420,6 +481,51 @@ export function Workspace({ cloud = false }: { cloud?: boolean }) {
                     New evaluation
                   </Button>
                 </div>
+                {library?.page &&
+                  ["runs", "projects", "insights"].includes(view) && (
+                    <div
+                      className="mb-5 space-y-3 rounded-lg border bg-card p-4"
+                      aria-label="Evaluation archive pages"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-muted-foreground">
+                          {runs.length} evaluations loaded. Search, assignments
+                          and totals use these runs.
+                          {library.page.nextCursor
+                            ? " More pages are available; load them to include the rest of your archive."
+                            : " All available pages have been loaded."}
+                        </p>
+                        {library.page.nextCursor && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={loadingMore || refreshing}
+                            onClick={() => void loadMore()}
+                          >
+                            {loadingMore && (
+                              <Loader2 size={15} className="animate-spin" />
+                            )}
+                            {loadingMore
+                              ? "Loading evaluations…"
+                              : "Load more evaluations"}
+                          </Button>
+                        )}
+                      </div>
+                      {library.page.nextCursor && (
+                        <p className="text-xs text-muted-foreground">
+                          Loaded evaluations are sorted by date. A later page
+                          may contain newer runs. Refresh starts again from the
+                          first page.
+                        </p>
+                      )}
+                      {pageError && (
+                        <Notice tone="error">
+                          {pageError} Your loaded evaluations are retained;
+                          retry loading this page.
+                        </Notice>
+                      )}
+                    </div>
+                  )}
                 {(view === "projects" || view === "insights") && (
                   <div className="mb-5 space-y-3">
                     <Button

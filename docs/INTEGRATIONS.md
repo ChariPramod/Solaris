@@ -21,12 +21,14 @@ Use the configured HTTPS origin, for example `https://solaris-gauntlet.vercel.ap
 
 | Method | Path | Result |
 | --- | --- | --- |
-| GET | `/api/automation/v1/runs` | Loaded run library, warnings and listing limits |
+| GET | `/api/automation/v1/runs?limit=50&cursor=...` | One library page, warnings and continuation |
 | POST | `/api/automation/v1/jobs` | Durable job; HTTP 202 does not mean tasks passed |
 | GET | `/api/automation/v1/jobs/{id}` | Current job state, no callback credential |
 | GET | `/api/automation/v1/runs/{id}` | Saved manifest and trial records |
 | POST | `/api/automation/v1/runs/{id}/gate` | Actual policy verdict, checks and warnings |
 | GET | `/api/automation/v1/compare?candidate={id}&baseline={id}` | Comparison of compatible preserved evidence |
+
+Run listings accept a page limit from 1–200 (default 50). Follow `page.nextCursor` until null, URL-encoding it; a short or empty `runs` array does not necessarily mean the archive ended. Deduplicate run IDs across pages. Pages are not a chronological snapshot; totals and search cover only records you load. See [query/response architecture](QUERY_RESPONSE.md).
 
 Job request:
 

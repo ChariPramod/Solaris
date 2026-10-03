@@ -108,6 +108,12 @@ async function consume(
 
 /** Private durable storage. Callers own authentication and validation of JSON schemas. */
 export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
+  // Coalesce only concurrent immutable-content reads. Mutable metadata and
+  // authentication reads are always fresh, and no bytes survive a settled read.
+  const pendingBytes = new Map<
+    string,
+    Promise<{ bytes: Buffer; etag: string } | null>
+  >();
   async function read(key: string, limit: number) {
     keyPath(key);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > JSON_LIMIT) {
@@ -216,9 +222,25 @@ export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
       );
     },
     async readBytes(key: string, limit: number): Promise<Buffer> {
-      const result = await read(key, limit);
+      const immutable =
+        /^artifacts\/[A-Za-z0-9][A-Za-z0-9_-]{0,119}\/[a-f0-9]{64}$/.test(key);
+      const identity = `${limit}:${key}`;
+      let pending = immutable ? pendingBytes.get(identity) : undefined;
+      if (!pending) {
+        pending = read(key, limit);
+        if (immutable && pendingBytes.size < 64) {
+          const tracked = pending.finally(() => {
+            if (pendingBytes.get(identity) === tracked)
+              pendingBytes.delete(identity);
+          });
+          pendingBytes.set(identity, tracked);
+          pending = tracked;
+        }
+      }
+      const result = await pending;
       if (!result) throw new StoreError("Stored file not found", 404);
-      return result.bytes;
+      // Callers must not be able to mutate another caller's evidence buffer.
+      return immutable ? Buffer.from(result.bytes) : result.bytes;
     },
     async writeBytes(
       key: string,
@@ -278,8 +300,63 @@ export function createCloudStorage(sdk: CloudStorageSDK = { get, put, list }) {
         storageError(error);
       }
     },
+    async listKeyPage(
+      prefix: string,
+      limit = 50,
+      cursor?: string,
+    ): Promise<{ keys: string[]; nextCursor: string | null }> {
+      keyPath(prefix, true);
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
+        throw new StoreError("Choose a page size from 1 to 200.", 400);
+      if (cursor !== undefined && !/^[\x21-\x7e]{1,4096}$/.test(cursor))
+        throw new StoreError("Invalid continuation cursor.", 400);
+      try {
+        const page = await sdk.list({
+          prefix,
+          limit,
+          cursor,
+          abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (
+          !Array.isArray(page.blobs) ||
+          page.blobs.length > limit ||
+          typeof page.hasMore !== "boolean"
+        )
+          throw new StoreError("Storage returned an invalid page.", 503);
+        const keys = new Set<string>();
+        for (const blob of page.blobs) {
+          keyPath(blob.pathname);
+          if (!blob.pathname.startsWith(prefix) || keys.has(blob.pathname))
+            throw new StoreError("Storage returned an invalid page.", 503);
+          keys.add(blob.pathname);
+        }
+        if (
+          page.hasMore &&
+          (!page.blobs.length ||
+            typeof page.cursor !== "string" ||
+            page.cursor === cursor ||
+            !/^[\x21-\x7e]{1,4096}$/.test(page.cursor))
+        )
+          throw new StoreError(
+            "Storage pagination could not advance safely.",
+            503,
+          );
+        return {
+          keys: [...keys],
+          nextCursor: page.hasMore ? page.cursor! : null,
+        };
+      } catch (error) {
+        storageError(error);
+      }
+    },
   };
 }
 
-export const { readJSON, writeJSON, readBytes, writeBytes, listKeys } =
-  createCloudStorage();
+export const {
+  readJSON,
+  writeJSON,
+  readBytes,
+  writeBytes,
+  listKeys,
+  listKeyPage,
+} = createCloudStorage();

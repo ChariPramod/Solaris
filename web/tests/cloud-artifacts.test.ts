@@ -13,14 +13,23 @@ function fixture() {
   const objects = new Map<string, { bytes: Buffer; etag: string }>();
   let version = 0;
   let conflicts = 0;
+  const operations = {
+    readJSON: 0,
+    writeJSON: 0,
+    readBytes: 0,
+    writeBytes: 0,
+    listKeys: 0,
+  };
   const deps: ArtifactStorage = {
     async readJSON<T>(key: string) {
+      operations.readJSON++;
       const row = objects.get(key);
       return row
         ? { value: JSON.parse(row.bytes.toString()) as T, etag: row.etag }
         : null;
     },
     async writeJSON(key, value, expected) {
+      operations.writeJSON++;
       if (conflicts > 0) {
         conflicts--;
         throw new StoreError("conflict", 409);
@@ -32,18 +41,21 @@ function fixture() {
       return { etag };
     },
     async readBytes(key, limit) {
+      operations.readBytes++;
       const row = objects.get(key);
       if (!row) throw new StoreError("missing", 404);
       if (row.bytes.length > limit) throw new StoreError("too large", 413);
       return Buffer.from(row.bytes);
     },
     async writeBytes(key, bytes) {
+      operations.writeBytes++;
       if (objects.has(key)) throw new StoreError("conflict", 409);
       const etag = String(++version);
       objects.set(key, { bytes: Buffer.from(bytes), etag });
       return { etag };
     },
     async listKeys(prefix, limit = 200) {
+      operations.listKeys++;
       const keys = [...objects.keys()].filter((key) => key.startsWith(prefix));
       return { keys: keys.slice(0, limit), truncated: keys.length > limit };
     },
@@ -52,6 +64,13 @@ function fixture() {
     cloud: createCloudArtifacts(deps),
     deps,
     objects,
+    operations,
+    resetOperations: () => {
+      for (const key of Object.keys(operations) as Array<
+        keyof typeof operations
+      >)
+        operations[key] = 0;
+    },
     conflict: (count: number) => {
       conflicts = count;
     },
@@ -259,4 +278,194 @@ test("evidence collection limits are checked before downloading payloads", async
     null,
   );
   await assert.rejects(cloud.getCloudEvidenceFiles("run"), status(413));
+});
+
+test("summary listing reads one index per run and no artifact bodies", async () => {
+  const { cloud, operations, resetOperations } = fixture();
+  await cloud.ingestArtifact("first", "results.json", json(manifest));
+  await cloud.ingestArtifact("second", "results.json", json(manifest));
+  resetOperations();
+  const library = await cloud.listCloudRuns();
+  assert.equal(library.runs.length, 2);
+  assert.deepEqual(library.warnings, []);
+  assert.deepEqual(operations, {
+    readJSON: 2,
+    writeJSON: 0,
+    readBytes: 0,
+    writeBytes: 0,
+    listKeys: 1,
+  });
+});
+
+test("legacy and malformed summaries fall back to verified evidence without warnings", async () => {
+  const { cloud, objects, operations, resetOperations } = fixture();
+  await cloud.ingestArtifact("run", "results.json", json(manifest));
+  const index = (await cloud.artifactIndex("run")).value;
+  const valid = index.runSummary as {
+    version: number;
+    manifestSha256: string;
+    run: Record<string, unknown>;
+  };
+  const invalid = [
+    undefined,
+    null,
+    {},
+    { ...valid, version: 2 },
+    { ...valid, manifestSha256: "a".repeat(64) },
+    { ...valid, run: { ...valid.run, id: "another-run" } },
+    { ...valid, run: { ...valid.run, recorded: 100 } },
+    { ...valid, run: { ...valid.run, passed: 2 } },
+    { ...valid, run: { ...valid.run, planned_trials: 2 } },
+    { ...valid, run: { ...valid.run, records: [] } },
+  ];
+  for (const runSummary of invalid) {
+    objects.get("indexes/run.json")!.bytes = json({ ...index, runSummary });
+    resetOperations();
+    const library = await cloud.listCloudRuns();
+    assert.equal(library.runs[0].recorded, 1);
+    assert.deepEqual(library.warnings, []);
+    assert.equal(operations.readJSON, 1);
+    assert.equal(operations.readBytes, 1);
+    assert.equal(operations.writeJSON, 0);
+  }
+  const entry = index.files["results.json"];
+  objects.get(entry.key)!.bytes = Buffer.from("corrupt evidence");
+  const library = await cloud.listCloudRuns();
+  assert.equal(library.runs.length, 0);
+  assert.equal(library.warnings.length, 1);
+});
+
+test("summary replacement follows the manifest CAS and invalid manifests drop old summaries", async () => {
+  const { cloud } = fixture();
+  await cloud.ingestArtifact("run", "results.json", json(manifest));
+  await Promise.all([
+    cloud.ingestArtifact(
+      "run",
+      "results.json",
+      json({ ...manifest, status: "stopped" }),
+    ),
+    cloud.ingestArtifact("run", "T01/1/result.json", json(record)),
+  ]);
+  const index = await cloud.artifactIndex("run");
+  const summary = index.value.runSummary as {
+    manifestSha256: string;
+    run: { status: string };
+  };
+  assert.equal(
+    summary.manifestSha256,
+    index.value.files["results.json"].sha256,
+  );
+  assert.equal(summary.run.status, "stopped");
+  assert.ok(index.value.files["T01/1/result.json"]);
+  assert.equal((await cloud.listCloudRuns()).runs[0].status, "stopped");
+  await cloud.ingestArtifact("run", "results.json", json({}));
+  assert.equal((await cloud.artifactIndex("run")).value.runSummary, undefined);
+  assert.equal((await cloud.listCloudRuns()).runs.length, 0);
+});
+
+test("unchanged uploads read once and write neither immutable bytes nor the index", async () => {
+  const { cloud, operations, resetOperations, objects } = fixture();
+  const bytes = json(manifest);
+  await cloud.ingestArtifact("run", "results.json", bytes);
+  const etag = objects.get("indexes/run.json")!.etag;
+  resetOperations();
+  await cloud.ingestArtifact("run", "results.json", bytes);
+  assert.equal(objects.get("indexes/run.json")!.etag, etag);
+  assert.deepEqual(operations, {
+    readJSON: 1,
+    writeJSON: 0,
+    readBytes: 0,
+    writeBytes: 0,
+    listKeys: 0,
+  });
+});
+
+test("concurrent identical uploads converge without rewriting the winning index", async () => {
+  const { cloud, operations } = fixture();
+  await Promise.all([
+    cloud.ingestArtifact("run", "results.json", json(manifest)),
+    cloud.ingestArtifact("run", "results.json", json(manifest)),
+  ]);
+  assert.equal(operations.writeJSON, 2); // One success, one stale CAS.
+  assert.equal(operations.readJSON, 3); // Loser checks the winner, then returns.
+  assert.equal((await cloud.readCloudRun("run")).run_id, "original");
+});
+
+test("trial details read one index snapshot for manifest, actions and screenshot names", async () => {
+  const { cloud, deps, operations, resetOperations } = fixture();
+  await cloud.ingestArtifact("run", "results.json", json(manifest));
+  await cloud.ingestArtifact(
+    "run",
+    "T01/1/actions.jsonl",
+    Buffer.from('{"step":1,"screenshot":"001.jpg"}\n'),
+  );
+  await cloud.ingestArtifact("run", "T01/1/001.jpg", Buffer.from([255, 216]));
+  resetOperations();
+  const readJSON = deps.readJSON;
+  const reader = createCloudArtifacts({
+    ...deps,
+    async readJSON<T>(key: string) {
+      const result = await readJSON<T>(key);
+      // Fail any follow-up index read instead of allowing mixed snapshots.
+      if (operations.readJSON > 1) throw new Error("Index was fetched again");
+      return result;
+    },
+  });
+  const detail = await reader.readCloudTrial("run", "T01", 1);
+  assert.equal(detail.frames.length, 1);
+  assert.deepEqual(detail.screenshots, ["001.jpg"]);
+  assert.deepEqual(detail.warnings, []);
+  assert.deepEqual(operations, {
+    readJSON: 1,
+    writeJSON: 0,
+    readBytes: 2,
+    writeBytes: 0,
+    listKeys: 0,
+  });
+});
+
+test("paged run listings preserve provider cursors and scan only the requested page", async () => {
+  const { cloud, deps, operations, resetOperations } = fixture();
+  await cloud.ingestArtifact("first", "results.json", json(manifest));
+  await cloud.ingestArtifact("second", "results.json", json(manifest));
+  const calls: unknown[][] = [];
+  const paged = createCloudArtifacts({
+    ...deps,
+    async listKeyPage(prefix, limit, cursor) {
+      calls.push([prefix, limit, cursor]);
+      return cursor
+        ? { keys: ["indexes/second.json"], nextCursor: null }
+        : { keys: ["indexes/first.json"], nextCursor: "provider-page-2" };
+    },
+  });
+  resetOperations();
+  const first = await paged.listCloudRuns({ limit: 1 });
+  assert.deepEqual(first.page, {
+    limit: 1,
+    scanned: 1,
+    nextCursor: "provider-page-2",
+  });
+  assert.deepEqual(
+    first.runs.map((run) => run.id),
+    ["first"],
+  );
+  assert.deepEqual(first.warnings, []);
+  const second = await paged.listCloudRuns({
+    limit: 1,
+    cursor: first.page!.nextCursor!,
+  });
+  assert.deepEqual(second.page, { limit: 1, scanned: 1, nextCursor: null });
+  assert.deepEqual(
+    second.runs.map((run) => run.id),
+    ["second"],
+  );
+  assert.deepEqual(second.warnings, []);
+  assert.deepEqual(calls, [
+    ["indexes/", 1, undefined],
+    ["indexes/", 1, "provider-page-2"],
+  ]);
+  assert.equal(operations.readJSON, 2);
+  assert.equal(operations.readBytes, 0);
+  assert.equal(operations.listKeys, 0);
+  await assert.rejects(cloud.listCloudRuns({ limit: 0 }), status(400));
 });

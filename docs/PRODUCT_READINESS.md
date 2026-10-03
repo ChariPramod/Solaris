@@ -1,6 +1,6 @@
 # Product readiness and unfinished engineering
 
-Updated September 22, 2026. This is the product engineering backlog for a technical stakeholder review. It is not a presentation plan.
+Updated October 2, 2026. This is the product engineering backlog for a technical stakeholder review. It is not a presentation plan.
 
 Solaris has a working evaluation loop: configure a run, execute the Python harness in an isolated cloud worker, retain private evidence, review trials, compare independent runs, and apply conservative release gates. The major remaining gaps concern operating and validating that system with real providers.
 
@@ -49,7 +49,7 @@ To repeat the cancellation check, privately supply `GAUNTLET_ADMIN_KEY` and `GAU
 
 ## Priority 4: operational limits and cost controls
 
-**Delivered:** atomic workspace evaluation capacity and idempotent launches prevent duplicate requests and bound concurrent evaluations. **Unfinished:** hard spending controls, provider cost reconciliation and complete archive pagination/retention. Assessment workers remain outside the evaluation cap.
+**Delivered:** atomic workspace evaluation capacity and idempotent launches prevent duplicate requests and bound concurrent evaluations. Cloud run listings now support continuation pages; summary projections reduce reads, unchanged artifacts skip storage writes, and idle/hidden views reduce polling. **Unfinished:** hard spending controls, provider cost reconciliation, job/local-library pagination and retention. Assessment workers remain outside the evaluation cap.
 
 **Engineering acceptance:** enforce an atomic global active-job limit; prevent duplicate submissions with idempotency keys; validate estimates against actual model usage and desktop fees; distinguish unknown charges; introduce explicit admission budgets before allocation. Paginate jobs/runs without silently omitting older entries. Add retention previews and protect objects referenced by retained runs or reviews before deletion.
 

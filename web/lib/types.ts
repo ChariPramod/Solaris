@@ -62,6 +62,8 @@ export type Library = {
   warnings: string[];
   source: "local" | "cloud";
   scannedAt: string;
+  /** Cloud provider continuation; totals and filters describe only loaded runs. */
+  page?: { nextCursor: string | null; limit: number; scanned: number };
 };
 export type ActionFrame = {
   step?: number;
