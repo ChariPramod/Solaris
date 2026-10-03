@@ -47,3 +47,4 @@ jobs:
       - run: npm run test:integration
         env:
           GAUNTLET_PYTHON: python
+      - run: npm run test:export

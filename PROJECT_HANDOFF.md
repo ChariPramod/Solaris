@@ -6,7 +6,7 @@ Updated October 2, 2026. This is the practical handoff for the Solaris project, 
 
 Added client projects, reusable workflow templates, honest analytics, streaming per-run evidence exports, a scoped automation API and GitHub Actions runner, n8n/Zapier HTTP connection recipes, atomic workspace evaluation admission and retry-safe launches. See [AGENCY_RELEASE.md](docs/AGENCY_RELEASE.md) for exact capabilities, limitations and the remaining owner setup, and [INTEGRATIONS.md](docs/INTEGRATIONS.md) for credential handling and API contracts. Projects are organizational metadata, not client authentication. No automated external client communication is enabled.
 
-Current local release checks: **426 Python tests and 173 TypeScript tests**, lint/format, typecheck, optimized build and both production HTTP integration scripts pass. The bundle HTTP check streamed more than 6 MiB and verified every extracted checksum. Current agency production acceptance is recorded in `docs/AGENCY_RELEASE.md`.
+Current local release checks: **426 Python tests and 173 TypeScript tests**, lint/format, typecheck, optimized build and both production HTTP integration scripts pass. The bundle HTTP check streamed more than 6 MiB and verified every extracted checksum. Production HTTP acceptance passed on `32193db`, and the actual GitHub Actions cloud integration passed using a restricted diagnostic key. Exact runs, owner steps and the key renewal date are recorded in [docs/AGENCY_RELEASE.md](docs/AGENCY_RELEASE.md).
 
 ## Product operations iteration — September 22, 2026
 

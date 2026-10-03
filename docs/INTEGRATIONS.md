@@ -54,6 +54,8 @@ Poll jobs until `complete`, `failed`, `cancelled`, or `interrupted`. A completed
 
 The repository includes [.github/workflows/solaris-cloud.yml](../.github/workflows/solaris-cloud.yml), manually dispatched only, and [scripts/solaris-ci.mjs](../scripts/solaris-ci.mjs). It runs a credential-free model diagnostic in the real cloud harness and applies an explicitly diagnostic policy. No automatic schedule or pull-request live spending is enabled.
 
+The Solaris repository is already configured and its first cloud diagnostic workflow passed. Its current restricted key expires November 2, 2026 UTC; see [the release record](AGENCY_RELEASE.md). For another repository:
+
 1. Store the scoped integration key as the repository secret `SOLARIS_API_TOKEN`.
 2. Copy the workflow and runner into the target repository; set `SOLARIS_URL` to the client's deployment.
 3. Dispatch the workflow. The console retains the job ID and prints the actual gate result.

@@ -2,7 +2,7 @@
 
 Updated October 2, 2026.
 
-The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The production address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. This document describes the current implementation and distinguishes local verification from historical production acceptance. The October 2 agency increment has passed local checks; its current production acceptance is still pending. The September 22 acceptance against source commit `c443612` remains recorded below and does not verify these new features.
+The public repository is [ChariPramod/Solaris](https://github.com/ChariPramod/Solaris). The production address is **[solaris-gauntlet.vercel.app](https://solaris-gauntlet.vercel.app)**. This document describes the current implementation and distinguishes local verification from historical production acceptance. The October 2 agency increment passed local checks and production HTTP acceptance against source `32193db`; the repository GitHub cloud integration also passed. The September 22 acceptance against source commit `c443612` remains recorded below and does not verify these new features.
 
 The previous hosted preview is not the production backend. This application runs the Python harness, stores real evidence, and returns actual verifier decisions. A dry run intentionally uses a static agent and produces expected task failures. No live Solari/model benchmark has been verified.
 
@@ -58,6 +58,7 @@ npm --prefix web test
 npm --prefix web run typecheck
 npm --prefix web run build
 npm --prefix web run test:integration
+npm --prefix web run test:export
 ```
 
 The integration command exercises an isolated local production server. It does not replace cloud acceptance. Commit and push reviewed source, deploy through the linked Vercel project, and verify that the worker revision is the intended published commit. Keep `.env*`, `.vercel/`, `tmp/`, local evidence and workspace metadata out of source control.
@@ -132,11 +133,11 @@ Back up the complete private store through an authorized storage operation, incl
 
 ## Verification and production acceptance
 
-### October 2 agency increment — local checks passed; production acceptance pending
+### October 2 agency increment — production acceptance passed
 
 The current suite passes **426 Python tests and 173 TypeScript tests**. Python lint/format checks also pass. Coverage includes concurrent launch admission, same-key retries, scope restrictions, credential hashing/revocation, client project conflicts, evidence archive extraction and independent checksum verification, partial/corrupt exports, and the CI client's real gate-result contract. These local checks do not establish current production acceptance, external n8n/Zapier account connectivity, live model performance or live desktop cleanup.
 
-After deployment, verify the owner browser workflow, project persistence, token creation/revocation and scoped machine requests, same-key launch reuse, capacity behavior, downloadable streamed bundles and the CI gate path against the actual production revision. Record that acceptance separately before calling this increment production-verified. See [the agency release checklist](AGENCY_RELEASE.md).
+Production acceptance verified project persistence/conflicts, token creation/revocation and scope restrictions, same-key launch reuse, changed-plan rejection, checksum-verified cloud bundles with baseline artifacts, and the actual Python quality gate. The manually dispatched GitHub workflow also passed using a restricted diagnostic key. See [the agency release record](AGENCY_RELEASE.md) for exact job IDs, CI links, key expiry and browser verification scope. Capacity races are covered by automated tests; production saturation and live desktop cleanup were not exercised.
 
 ### Historical acceptance — September 22, 2026
 

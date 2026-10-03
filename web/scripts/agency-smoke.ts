@@ -201,9 +201,19 @@ async function main() {
     }
     console.log("Temporary credentials revoked and rejected by the API.");
   } finally {
-    for (const id of created)
-      await owner("/api/integrations/tokens", { id }, 200, "DELETE");
+    const revocations = await Promise.allSettled(
+      created.map((id) =>
+        owner("/api/integrations/tokens", { id }, 200, "DELETE"),
+      ),
+    );
     await rm(directory, { recursive: true, force: true });
+    const unresolved = created.filter(
+      (_, index) => revocations[index].status === "rejected",
+    );
+    if (unresolved.length)
+      throw new Error(
+        `Acceptance cleanup could not confirm revocation for token IDs: ${unresolved.join(", ")}. Revoke them in Integrations.`,
+      );
   }
 }
 main().catch((error) => {
