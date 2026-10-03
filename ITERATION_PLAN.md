@@ -7,7 +7,7 @@ Updated October 2, 2026. Build on twelve tasks, two adapters, explicit pricing, 
 Build → regression tests → independent review → production acceptance → update this handoff and deploy. Each increment preserves original evidence and records the limits of what was verified.
 
 - **Delivered:** architecture/query diagrams, in-memory verified reads, summary projection, duplicate-write avoidance, paged run library and project delivery tracking.
-- **Current increment:** project handoff downloads covering every assigned run, paged execution history with independent current-job visibility, and browser response fallback correction. Acceptance includes private-field exclusion, concurrent edits, missing evidence, archive traversal, revoked-token rejection and a real diagnostic worker.
+- **Delivered this loop:** project handoff downloads covering every assigned run, paged execution history with independent current-job visibility, and browser response fallback correction. Acceptance includes private-field exclusion, concurrent edits, missing evidence, archive traversal, revoked-token rejection and a real diagnostic worker.
 - **Next engineering priority:** versioned workspace backup and isolated validated restore, including project/preset/review metadata and all referenced evidence. Keep credentials and executable job state out of import; refuse overwrites and validate corrupted/interrupted archives.
 - **Next externally dependent milestone:** first reviewed live desktop/model runs after private provider configuration. This remains separate from diagnostic acceptance and cannot be closed by additional unit tests.
 
